@@ -1,0 +1,64 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: poverka-bot-max-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maxapp}
+      POSTGRES_USER: ${POSTGRES_USER:-maxuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: poverka-bot-max-pgadmin
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-change_me}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  backend:
+    build:
+      context: ./backend
+    container_name: poverka-bot-max-backend
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PORT: ${PORT:-3000}
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost:3000}
+      MINIAPP_PUBLIC_URL: ${MINIAPP_PUBLIC_URL:-http://localhost:5173}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-replace_me}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-replace_me}
+      MINIAPP_SHARED_SECRET: ${MINIAPP_SHARED_SECRET:-replace_me}
+    ports:
+      - "3000:3000"
+
+  miniapp:
+    build:
+      context: ./miniapp
+    container_name: poverka-bot-max-miniapp
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+      VITE_DEFAULT_BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-https://poverka-test-api.liven8n.site}
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres_data:
+  pgadmin_data:

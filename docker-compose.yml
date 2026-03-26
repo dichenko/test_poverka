@@ -7,6 +7,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-maxapp}
       POSTGRES_USER: ${POSTGRES_USER:-maxuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maxuser} -d ${POSTGRES_DB:-maxapp}"]
       interval: 10s
@@ -28,7 +30,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-change_me}
     ports:
-      - "5050:80"
+      - "127.0.0.1:5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
 
@@ -64,7 +66,7 @@ services:
       STORAGE_LOCAL_PATH: ${STORAGE_LOCAL_PATH:-./storage}
       STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-http://localhost:3000/static}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - backend_storage:/app/storage
     healthcheck:
@@ -86,7 +88,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "5173:80"
+      - "127.0.0.1:8080:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
       interval: 15s

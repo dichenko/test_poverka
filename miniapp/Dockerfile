@@ -11,6 +11,22 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
-RUN printf "server { listen 80; server_name _; root /usr/share/nginx/html; index index.html; location / { try_files $uri /index.html; } location /health { return 200 'ok'; add_header Content-Type text/plain; } }" > /etc/nginx/conf.d/default.conf
+RUN cat <<'EOF' > /etc/nginx/conf.d/default.conf
+server {
+  listen 80;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  location / {
+    try_files $uri /index.html;
+  }
+
+  location /health {
+    add_header Content-Type text/plain;
+    return 200 'ok';
+  }
+}
+EOF
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

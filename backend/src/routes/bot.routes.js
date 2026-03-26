@@ -29,6 +29,8 @@ function extractIncomingMessage(body) {
     body?.userId,
     body?.sender_id,
     body?.senderId,
+    body?.message?.sender?.user_id,
+    body?.message?.recipient?.user_id,
     body?.from?.id,
     body?.user?.id,
     body?.chat?.id,
@@ -40,6 +42,7 @@ function extractIncomingMessage(body) {
 
   const textCandidates = [
     body?.text,
+    body?.message?.body?.text,
     body?.message?.text,
     typeof body?.message === 'string' ? body.message : '',
     body?.body,

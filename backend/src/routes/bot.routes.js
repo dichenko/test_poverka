@@ -6,8 +6,27 @@ const botService = require('../services/bot.service');
 
 const router = express.Router();
 
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+function formatLogTimestamp(date) {
+  const day = pad2(date.getDate());
+  const month = pad2(date.getMonth() + 1);
+  const hours = pad2(date.getHours());
+  const minutes = pad2(date.getMinutes());
+  const seconds = pad2(date.getSeconds());
+  return `${day}/${month} ${hours}/${minutes}/${seconds}`;
+}
+
 router.post('/webhook/max', async (req, res, next) => {
   try {
+    const userId = String(req.body?.user_id || '').trim();
+    const text = String(req.body?.text || '').trim().replace(/\s+/g, ' ');
+    const logUserId = userId || 'unknown';
+
+    console.log(`${formatLogTimestamp(new Date())} ${logUserId} ${text}`);
+
     const providedSecret = req.header('x-max-secret');
 
     if (!providedSecret || providedSecret !== config.maxWebhookSecret) {
@@ -16,9 +35,6 @@ router.post('/webhook/max', async (req, res, next) => {
         error: 'Invalid x-max-secret header.'
       });
     }
-
-    const userId = String(req.body.user_id || '').trim();
-    const text = String(req.body.text || '').trim();
 
     if (!userId) {
       return res.status(400).json({

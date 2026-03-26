@@ -1,176 +1,143 @@
-# poverka-bot-max
+# Поверка Бот MAX (production-ready baseline)
 
-РњРёРЅРёРјР°Р»СЊРЅС‹Р№ full-stack MVP РґР»СЏ С‚РµСЃС‚РёСЂРѕРІР°РЅРёСЏ СЃС†РµРЅР°СЂРёСЏ MAX bot + miniapp + PostgreSQL.
+Репозиторий модернизирован из MVP в production-ready baseline для запуска на VPS.
 
-РџСЂРѕРµРєС‚ РґРµР»Р°РµС‚ С‚РѕР»СЊРєРѕ Р±Р°Р·РѕРІС‹Р№ РїРѕС‚РѕРє:
+## Что реализовано
 
-1. Р±РѕС‚ РїРѕР»СѓС‡Р°РµС‚ СЃРѕРѕР±С‰РµРЅРёРµ РѕС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ;
-2. backend РїСЂРѕРІРµСЂСЏРµС‚ СЃРѕС‚СЂСѓРґРЅРёРєР° РІ PostgreSQL;
-3. РµСЃР»Рё СЃРѕС‚СЂСѓРґРЅРёРє Р°РєС‚РёРІРµРЅ, backend РІРѕР·РІСЂР°С‰Р°РµС‚ СЃСЃС‹Р»РєСѓ РЅР° miniapp;
-4. miniapp СЃРѕС…СЂР°РЅСЏРµС‚ С„РѕСЂРјСѓ РІ PostgreSQL СЃРѕ СЃС‚Р°С‚СѓСЃРѕРј `draft`;
-5. backend РІРѕР·РІСЂР°С‰Р°РµС‚ С‚РµРєСЃС‚ РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ;
-6. РїРѕСЃР»Рµ СЃРѕРѕР±С‰РµРЅРёСЏ `РїРѕРґС‚РІРµСЂР¶РґР°СЋ` backend РїРµСЂРµРІРѕРґРёС‚ РїРѕСЃР»РµРґРЅСЋСЋ С‡РµСЂРЅРѕРІСѓСЋ Р·Р°РїРёСЃСЊ РІ `confirmed`.
+- Backend: `Express + TypeScript + Prisma + Zod`.
+- Безопасная auth miniapp через серверную проверку `initData` (`WebAppData` HMAC flow).
+- Access token (short-lived) + refresh token rotation (HttpOnly cookie + DB sessions).
+- RBAC (`USER` / `ADMIN`) и защищенный admin API.
+- MAX webhook модуль (`/webhook/max`) с проверкой `X-Max-Bot-Api-Secret`.
+- Новая БД схема: организации, пользователи, заявки, история статусов, аудит, auth sessions, files.
+- Miniapp (React/Vite): безопасный handshake, user flow (draft -> confirm), базовый admin UI.
+- Storage foundation: адаптер + local provider + static public URLs.
+- Docker Compose production profile с healthchecks.
 
-## РЎС‚РµРє
+## Структура
 
-- Node.js 20
-- Express
-- pg
-- dotenv
-- React
-- Vite
-- PostgreSQL 16
-- pgAdmin 4
-- Docker Compose
+- `backend/`
+  - `src/modules/auth` — auth handshake/refresh/logout/me
+  - `src/modules/bot` — webhook + MAX outbound adapter
+  - `src/modules/submissions` — user submissions flow
+  - `src/modules/admin` — admin API
+  - `src/modules/storage` — storage adapter/foundation
+  - `prisma/schema.prisma` — целевая production схема
+  - `prisma/migrations/*` — миграции
+  - `prisma/seed.ts` — seed
+- `miniapp/`
+  - `src/pages/App.jsx` — user/admin контуры
+  - `src/lib/maxWebApp.js` — bridge/initData bootstrap
+  - `src/api/*` — API клиенты
+- `docker-compose.yml` — production compose
 
-## РЎС‚СЂСѓРєС‚СѓСЂР° СЃРµСЂРІРёСЃРѕРІ
+## Переменные окружения
 
-- `db`: PostgreSQL РЅР° `localhost:5432`
-- `pgadmin`: pgAdmin РЅР° `http://localhost:5050`
-- `backend`: API РЅР° `http://localhost:3000`
-- `miniapp`: React miniapp РЅР° `http://localhost:5173`
+См. `.env.example`.
 
-## РџРµСЂРµРјРµРЅРЅС‹Рµ РѕРєСЂСѓР¶РµРЅРёСЏ
+Ключевые:
+- `DATABASE_URL`
+- `JWT_ACCESS_SECRET`
+- `MAX_BOT_TOKEN`
+- `MAX_WEBHOOK_SECRET`
+- `MINIAPP_PUBLIC_URL`
+- `BACKEND_PUBLIC_URL`
+- `CORS_ORIGINS`
 
-РЁР°Р±Р»РѕРЅ РЅР°С…РѕРґРёС‚СЃСЏ РІ `.env.example`.
+## Локальный запуск (dev)
 
-Р”Р»СЏ Р»РѕРєР°Р»СЊРЅРѕРіРѕ СЃС‚Р°СЂС‚Р° `docker-compose.yml` СѓР¶Рµ СЃРѕРґРµСЂР¶РёС‚ Р·РЅР°С‡РµРЅРёСЏ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ, РїРѕСЌС‚РѕРјСѓ РјРѕР¶РЅРѕ Р·Р°РїСѓСЃРєР°С‚СЊ Р±РµР· `.env`.
+1. Установить зависимости:
 
-Р”Р»СЏ VPS СѓРґРѕР±РЅРѕ СЃРґРµР»Р°С‚СЊ С‚Р°Рє:
+```bash
+cd backend && npm install
+cd ../miniapp && npm install
+```
+
+2. Поднять PostgreSQL:
+
+```bash
+docker compose up -d db
+```
+
+3. Применить миграции и seed:
+
+```bash
+cd backend
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:seed
+```
+
+4. Запустить backend и miniapp:
+
+```bash
+cd backend && npm run dev
+cd miniapp && npm run dev
+```
+
+## Production запуск на VPS
+
+1. Подготовить `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Р Р·Р°С‚РµРј Р·Р°РјРµРЅРёС‚СЊ СЃРµРєСЂРµС‚С‹ Рё РїСѓР±Р»РёС‡РЅС‹Рµ URL РЅР° СЃРІРѕРё СЂРµР°Р»СЊРЅС‹Рµ Р·РЅР°С‡РµРЅРёСЏ.
+2. Заполнить реальные секреты и домены.
 
-## Р‘С‹СЃС‚СЂС‹Р№ Р·Р°РїСѓСЃРє Р»РѕРєР°Р»СЊРЅРѕ
-
-РўСЂРµР±РѕРІР°РЅРёСЏ:
-
-- Docker
-- Docker Compose
-
-Р—Р°РїСѓСЃРє:
+3. Запуск:
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
-РџРѕСЃР»Рµ СЃС‚Р°СЂС‚Р° Р±СѓРґСѓС‚ РґРѕСЃС‚СѓРїРЅС‹:
-
-- backend: `http://localhost:3000`
-- miniapp: `http://localhost:5173`
-- pgAdmin: `http://localhost:5050`
-- PostgreSQL: `localhost:5432`
-
-## Р—Р°РїСѓСЃРє РЅР° VPS
-
-1. РЈСЃС‚Р°РЅРѕРІРёС‚СЊ Docker Рё Docker Compose.
-2. РЎРєРѕРїРёСЂРѕРІР°С‚СЊ РїСЂРѕРµРєС‚ РЅР° СЃРµСЂРІРµСЂ.
-3. РЎРѕР·РґР°С‚СЊ `.env` РЅР° РѕСЃРЅРѕРІРµ `.env.example`.
-4. РЈРєР°Р·Р°С‚СЊ СЂРµР°Р»СЊРЅС‹Рµ РїСѓР±Р»РёС‡РЅС‹Рµ РґРѕРјРµРЅС‹:
-   - `BACKEND_PUBLIC_URL=https://api.example.com`
-   - `MINIAPP_PUBLIC_URL=https://app.example.com`
-   - `PGADMIN_PUBLIC_URL=https://pgadmin.example.com`
-   - `MAX_WEBHOOK_SECRET=...`
-   - `MINIAPP_SHARED_SECRET=...`
-5. Р—Р°РїСѓСЃС‚РёС‚СЊ:
+4. Проверки:
 
 ```bash
-docker compose up --build -d
+curl http://localhost:3000/health/live
+curl http://localhost:3000/health/ready
 ```
 
-Р•СЃР»Рё РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ reverse proxy, РЅР°РїСЂР°РІСЊ:
+## Команды
 
-- `https://api.example.com` -> backend port `3000`
-- `https://app.example.com` -> miniapp port `5173`
-- `https://pgadmin.example.com` -> pgAdmin port `5050`
+Backend:
+- `npm run dev`
+- `npm run build`
+- `npm run start`
+- `npm run prisma:migrate`
+- `npm run prisma:seed`
 
-## РўРµСЃС‚РѕРІС‹Рµ СЃРѕС‚СЂСѓРґРЅРёРєРё
+Miniapp:
+- `npm run dev`
+- `npm run build`
+- `npm run preview`
 
-- `1001` / `РРІР°РЅ РџРµС‚СЂРѕРІ`
-- `1002` / `РњР°СЂРёСЏ РЎРёРґРѕСЂРѕРІР°`
-- `1003` / `РўРµСЃС‚РѕРІС‹Р№ РЎРѕС‚СЂСѓРґРЅРёРє`
+## MAX miniapp auth flow
 
-## API Рё curl РїСЂРёРјРµСЂС‹
+1. Miniapp вызывает `window.WebApp.ready()`.
+2. Берет `initData` из `window.WebApp.initData`.
+3. Отправляет `POST /api/auth/max/handshake`.
+4. Backend валидирует подпись (`WebAppData` + `MAX_BOT_TOKEN`) и `auth_date` TTL.
+5. Backend проверяет replay и создает auth session.
+6. Возвращается `accessToken`, refresh хранится в `HttpOnly` cookie.
 
-### 1. Health
+## Admin функции (MVP+)
 
-```bash
-curl http://localhost:3000/health
-```
+- Просмотр пользователей + фильтры.
+- Создание/редактирование/активация пользователей.
+- Просмотр заявок + фильтры.
+- Просмотр истории статусов заявок.
+- Базовый просмотр audit logs.
 
-### 2. РЎС‚Р°СЂС‚ СЃС†РµРЅР°СЂРёСЏ
+## Важно
 
-```bash
-curl -X POST http://localhost:3000/webhook/max \
-  -H "Content-Type: application/json" \
-  -H "x-max-secret: replace_me" \
-  -d '{
-    "user_id": "1001",
-    "text": "start"
-  }'
-```
+- Старый URL-token доступ miniapp удален.
+- Старые SQL init-таблицы (`employees/form_submissions`) больше не используются.
+- Для production нужен корректный MAX Bot API endpoint (`MAX_BOT_API_BASE_URL`).
 
-### 3. РџРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ
+## Next TODO
 
-```bash
-curl -X POST http://localhost:3000/webhook/max \
-  -H "Content-Type: application/json" \
-  -H "x-max-secret: replace_me" \
-  -d '{
-    "user_id": "1001",
-    "text": "РїРѕРґС‚РІРµСЂР¶РґР°СЋ"
-  }'
-```
-
-### 4. РџСЂРѕСЃРјРѕС‚СЂ РѕС‚РїСЂР°РІРѕРє
-
-```bash
-curl http://localhost:3000/api/submissions/1001
-```
-
-## Р СѓС‡РЅРѕР№ С‚РµСЃС‚ РїРѕР»РЅРѕРіРѕ РїРѕС‚РѕРєР°
-
-1. РџРѕРґРЅРёРјРё РїСЂРѕРµРєС‚ РєРѕРјР°РЅРґРѕР№ `docker compose up --build`.
-2. РћС‚РїСЂР°РІСЊ Р·Р°РїСЂРѕСЃ РІ `POST /webhook/max` СЃ `user_id=1001` Рё С‚РµРєСЃС‚РѕРј `start`.
-3. РЎРєРѕРїРёСЂСѓР№ miniapp URL РёР· РѕС‚РІРµС‚Р° backend.
-4. РћС‚РєСЂРѕР№ СЃСЃС‹Р»РєСѓ РІ Р±СЂР°СѓР·РµСЂРµ.
-5. Р—Р°РїРѕР»РЅРё РїРѕР»СЏ `Р¤РРћ`, `РќРѕРјРµСЂ СЃС‡РµС‚С‡РёРєР°`, `РўРµРєСѓС‰РµРµ РїРѕРєР°Р·Р°РЅРёРµ`.
-6. РќР°Р¶РјРё `РћС‚РїСЂР°РІРёС‚СЊ`.
-7. Miniapp РїРѕРєР°Р¶РµС‚ `message_for_bot` СЃ С‚РµРєСЃС‚РѕРј РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ.
-8. РћС‚РїСЂР°РІСЊ РІ `POST /webhook/max` СЃРѕРѕР±С‰РµРЅРёРµ `РїРѕРґС‚РІРµСЂР¶РґР°СЋ` РґР»СЏ С‚РѕРіРѕ Р¶Рµ `user_id`.
-9. Backend РІРµСЂРЅРµС‚ `Р’СЃРµ РѕРє. Р”Р°РЅРЅС‹Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅС‹ Рё СЃРѕС…СЂР°РЅРµРЅС‹.`
-10. РџСЂРѕРІРµСЂСЊ `GET /api/submissions/1001` РёР»Рё С‚Р°Р±Р»РёС†Сѓ `form_submissions` РІ pgAdmin.
-
-## Р”РѕСЃС‚СѓРї Рє pgAdmin
-
-- URL: `http://localhost:5050`
-- Login: `admin@example.com`
-- Password: `change_me`
-
-Р§С‚РѕР±С‹ РїРѕРґРєР»СЋС‡РёС‚СЊ Р±Р°Р·Сѓ РІРЅСѓС‚СЂРё pgAdmin:
-
-1. РЎРѕР·РґР°Р№ РЅРѕРІС‹Р№ Server.
-2. Р’ `General` Р·Р°РґР°Р№ Р»СЋР±РѕРµ РёРјСЏ, РЅР°РїСЂРёРјРµСЂ `poverka-bot-max`.
-3. Р’Рѕ РІРєР»Р°РґРєРµ `Connection` СѓРєР°Р¶Рё:
-   - Host name/address: `db`
-   - Port: `5432`
-   - Maintenance database: `maxapp`
-   - Username: `maxuser`
-   - Password: `change_me`
-
-## Р§С‚Рѕ РІР°Р¶РЅРѕ РїСЂРѕ MVP
-
-- РќРµС‚ Redis, ORM, JWT, TypeScript, Next.js, Tailwind, Redux/Zustand.
-- РќРµС‚ Р·Р°РіСЂСѓР·РєРё С„РѕС‚Рѕ.
-- РќРµС‚ production-grade auth.
-- `MAX_BOT_TOKEN` РїРѕРєР° РЅРµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ, РѕРЅ РѕСЃС‚Р°РІР»РµРЅ РєР°Рє С‚РѕС‡РєР° СЂР°СЃС€РёСЂРµРЅРёСЏ РїРѕРґ СЂРµР°Р»СЊРЅСѓСЋ РѕС‚РїСЂР°РІРєСѓ СЃРѕРѕР±С‰РµРЅРёР№ РІ MAX.
-- РўРѕРєРµРЅ miniapp СЃРїРµС†РёР°Р»СЊРЅРѕ СЃРґРµР»Р°РЅ РїСЂРѕСЃС‚С‹Рј, С‡С‚РѕР±С‹ РїРѕР·Р¶Рµ Р±С‹Р»Рѕ Р»РµРіРєРѕ Р·Р°РјРµРЅРёС‚СЊ РµРіРѕ РЅР° СЂРµР°Р»СЊРЅСѓСЋ РїСЂРѕРІРµСЂРєСѓ MAX init-data.
-
-## Р”РѕРєСѓРјРµРЅС‚Р°С†РёСЏ
-
-- `docs/architecture.md`
-- `docs/api-contract.md`
-- `docs/db-schema.md`
+- Добавить интеграционные тесты webhook/auth/submissions.
+- Доработать outbound adapter под точный контракт MAX Bot API в вашем окружении.
+- Расширить admin UI (пагинация, сортировки, отчеты, лимиты/баланс).
+- Добавить полноценный upload workflow фото поверки (привязка к submission + moderation).

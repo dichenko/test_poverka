@@ -3,17 +3,14 @@ set -euo pipefail
 
 PROJECT_DIR="/opt/test_poverka"
 
-echo "==> Переходим в каталог проекта"
+echo "==> Enter project directory"
 cd "$PROJECT_DIR"
 
-echo "==> Тянем изменения из Git"
+echo "==> Pull latest changes"
 git pull
 
-echo "==> Пересобираем и перезапускаем backend"
-docker compose up -d --build backend
+echo "==> Build and run production stack"
+docker compose up -d --build db backend miniapp
 
-echo "==> Пересобираем и перезапускаем miniapp"
-docker compose up -d --build miniapp
-
-echo "==> Готово"
+echo "==> Current services"
 docker compose ps

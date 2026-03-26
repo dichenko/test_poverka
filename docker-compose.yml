@@ -7,18 +7,23 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-maxapp}
       POSTGRES_USER: ${POSTGRES_USER:-maxuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
-    ports:
-      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maxuser} -d ${POSTGRES_DB:-maxapp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
 
   pgadmin:
     image: dpage/pgadmin4:8
     container_name: poverka-bot-max-pgadmin
     restart: unless-stopped
+    profiles: ["tools"]
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-change_me}
@@ -33,32 +38,63 @@ services:
     container_name: poverka-bot-max-backend
     restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       PORT: ${PORT:-3000}
-      NODE_ENV: ${NODE_ENV:-development}
+      NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}
       BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost:3000}
       MINIAPP_PUBLIC_URL: ${MINIAPP_PUBLIC_URL:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-replace_me_with_very_long_secret_32_chars_min}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME:-max_refresh_token}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-replace_me}
       MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-replace_me}
-      MINIAPP_SHARED_SECRET: ${MINIAPP_SHARED_SECRET:-replace_me}
+      MAX_BOT_API_BASE_URL: ${MAX_BOT_API_BASE_URL:-https://botapi.max.ru}
+      MAX_INITDATA_TTL_SECONDS: ${MAX_INITDATA_TTL_SECONDS:-300}
+      INITDATA_REPLAY_TTL_SECONDS: ${INITDATA_REPLAY_TTL_SECONDS:-600}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-120}
+      AUTH_RATE_LIMIT_MAX_REQUESTS: ${AUTH_RATE_LIMIT_MAX_REQUESTS:-20}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_PATH: ${STORAGE_LOCAL_PATH:-./storage}
+      STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-http://localhost:3000/static}
     ports:
       - "3000:3000"
+    volumes:
+      - backend_storage:/app/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
 
   miniapp:
     build:
       context: ./miniapp
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+        VITE_DEFAULT_BACKEND_PUBLIC_URL: ${VITE_DEFAULT_BACKEND_PUBLIC_URL:-http://localhost:3000}
     container_name: poverka-bot-max-miniapp
     restart: unless-stopped
     depends_on:
-      - backend
-    environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
-      VITE_DEFAULT_BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-https://poverka-test-api.liven8n.site}
+      backend:
+        condition: service_healthy
     ports:
-      - "5173:5173"
+      - "5173:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
 
 volumes:
   postgres_data:
   pgadmin_data:
+  backend_storage:

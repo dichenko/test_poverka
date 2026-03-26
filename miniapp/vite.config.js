@@ -5,7 +5,6 @@ module.exports = defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 5173,
-    allowedHosts: ['poverka-test-app.liven8n.site']
+    port: 5173
   }
 });

@@ -2,4 +2,4 @@
 set -euo pipefail
 
 cd /opt/test_poverka
-docker compose logs -f --tail=100 miniapp
+docker compose logs -f --tail=200 miniapp

@@ -1,0 +1,186 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum SubmissionStatus {
+  DRAFT
+  PENDING_CONFIRMATION
+  CONFIRMED
+  REJECTED
+}
+
+enum SubmissionSource {
+  MINIAPP
+  BOT
+  ADMIN
+}
+
+enum AuditEntityType {
+  USER
+  ORGANIZATION
+  SUBMISSION
+  AUTH_SESSION
+  FILE
+  SYSTEM
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  inn       String   @unique
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  balance   Decimal? @db.Decimal(14, 2)
+  submissionLimit Int? @map("submission_limit")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users       User[]
+  submissions MeterSubmission[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  maxUserId      String    @unique @map("max_user_id")
+  firstName      String    @map("first_name")
+  lastName       String?   @map("last_name")
+  fullName       String    @map("full_name")
+  username       String?
+  phone          String?
+  role           UserRole  @default(USER)
+  organizationId String?   @map("organization_id")
+  isActive       Boolean   @default(true) @map("is_active")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization       Organization?             @relation(fields: [organizationId], references: [id])
+  submissions        MeterSubmission[]
+  statusHistory      SubmissionStatusHistory[] @relation("StatusChangedBy")
+  refreshTokens      AuthRefreshToken[]
+  createdAuditLogs   AuditLog[]                @relation("CreatedByUser")
+  files              FileEntity[]
+
+  @@index([organizationId])
+  @@index([role])
+  @@map("users")
+}
+
+model MeterSubmission {
+  id             String           @id @default(cuid())
+  userId         String           @map("user_id")
+  organizationId String           @map("organization_id")
+  meterNumber    String           @map("meter_number")
+  currentValue   Decimal          @db.Decimal(14, 3) @map("current_value")
+  status         SubmissionStatus
+  source         SubmissionSource @default(MINIAPP)
+  draftCreatedAt DateTime         @default(now()) @map("draft_created_at")
+  confirmedAt    DateTime?        @map("confirmed_at")
+  rejectedAt     DateTime?        @map("rejected_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  user          User                      @relation(fields: [userId], references: [id])
+  organization  Organization              @relation(fields: [organizationId], references: [id])
+  statusHistory SubmissionStatusHistory[]
+  files         FileEntity[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("meter_submissions")
+}
+
+model SubmissionStatusHistory {
+  id              String            @id @default(cuid())
+  submissionId    String            @map("submission_id")
+  oldStatus       SubmissionStatus? @map("old_status")
+  newStatus       SubmissionStatus  @map("new_status")
+  changedByUserId String?           @map("changed_by_user_id")
+  reason          String?
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  submission    MeterSubmission @relation(fields: [submissionId], references: [id])
+  changedByUser User?           @relation("StatusChangedBy", fields: [changedByUserId], references: [id])
+
+  @@index([submissionId, createdAt(sort: Desc)])
+  @@map("submission_status_history")
+}
+
+model AuditLog {
+  id             String          @id @default(cuid())
+  actorUserId    String?         @map("actor_user_id")
+  action         String
+  entityType     AuditEntityType @map("entity_type")
+  entityId       String?         @map("entity_id")
+  meta           Json?
+  ip             String?
+  userAgent      String?         @map("user_agent")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  actorUser User? @relation("CreatedByUser", fields: [actorUserId], references: [id])
+
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+model AuthRefreshToken {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  tokenHash        String    @unique @map("token_hash")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  replacedByToken  String?   @map("replaced_by_token")
+  createdByIp      String?   @map("created_by_ip")
+  userAgent        String?   @map("user_agent")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt])
+  @@map("auth_refresh_tokens")
+}
+
+model InitDataReplay {
+  id        String   @id @default(cuid())
+  replayKey String   @unique @map("replay_key")
+  maxUserId String   @map("max_user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("init_data_replays")
+}
+
+model FileEntity {
+  id             String    @id @default(cuid())
+  ownerUserId    String?   @map("owner_user_id")
+  submissionId   String?   @map("submission_id")
+  storageKey     String    @unique @map("storage_key")
+  originalName   String    @map("original_name")
+  mimeType       String    @map("mime_type")
+  sizeBytes      Int       @map("size_bytes")
+  publicUrl      String    @map("public_url")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  ownerUser   User?            @relation(fields: [ownerUserId], references: [id])
+  submission  MeterSubmission? @relation(fields: [submissionId], references: [id])
+
+  @@index([ownerUserId])
+  @@index([submissionId])
+  @@map("files")
+}

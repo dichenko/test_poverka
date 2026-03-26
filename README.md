@@ -70,9 +70,9 @@ docker compose up --build
 2. Скопировать проект на сервер.
 3. Создать `.env` на основе `.env.example`.
 4. Указать реальные публичные домены:
-   - `BACKEND_PUBLIC_URL=https://poverka-test-api.liven8n.site`
-   - `MINIAPP_PUBLIC_URL=https://poverka-test-app.liven8n.site`
-   - `PGADMIN_PUBLIC_URL=https://poverka-test-pgadmin.liven8n.site`
+   - `BACKEND_PUBLIC_URL=https://api.example.com`
+   - `MINIAPP_PUBLIC_URL=https://app.example.com`
+   - `PGADMIN_PUBLIC_URL=https://pgadmin.example.com`
    - `MAX_WEBHOOK_SECRET=...`
    - `MINIAPP_SHARED_SECRET=...`
 5. Запустить:
@@ -83,9 +83,9 @@ docker compose up --build -d
 
 Если используется reverse proxy, направь:
 
-- `https://poverka-test-api.liven8n.site` -> backend port `3000`
-- `https://poverka-test-app.liven8n.site` -> miniapp port `5173`
-- `https://poverka-test-pgadmin.liven8n.site` -> pgAdmin port `5050`
+- `https://api.example.com` -> backend port `3000`
+- `https://app.example.com` -> miniapp port `5173`
+- `https://pgadmin.example.com` -> pgAdmin port `5050`
 
 ## Тестовые сотрудники
 

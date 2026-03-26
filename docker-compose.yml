@@ -22,7 +22,6 @@ services:
     image: dpage/pgadmin4:8
     container_name: poverka-bot-max-pgadmin
     restart: unless-stopped
-    profiles: ["tools"]
     depends_on:
       db:
         condition: service_healthy

@@ -32,7 +32,7 @@ router.post('/webhook/max', async (req, res, next) => {
     if (!employee || !employee.is_active) {
       return res.json({
         ok: true,
-        message: 'Доступ запрещен. Тебя нет в списке сотрудников.'
+        message: `вас нет в базе данных. ваш MAX ID ${userId}`
       });
     }
 

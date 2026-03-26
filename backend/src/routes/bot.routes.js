@@ -19,13 +19,53 @@ function formatLogTimestamp(date) {
   return `${day}/${month} ${hours}/${minutes}/${seconds}`;
 }
 
+function toNormalizedText(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function extractIncomingMessage(body) {
+  const userIdCandidates = [
+    body?.user_id,
+    body?.userId,
+    body?.sender_id,
+    body?.senderId,
+    body?.from?.id,
+    body?.user?.id,
+    body?.chat?.id,
+    body?.message?.from?.id,
+    body?.message?.sender?.id,
+    body?.payload?.user_id,
+    body?.payload?.userId
+  ];
+
+  const textCandidates = [
+    body?.text,
+    body?.message?.text,
+    typeof body?.message === 'string' ? body.message : '',
+    body?.body,
+    body?.payload?.text,
+    body?.event?.text
+  ];
+
+  const rawUserId = userIdCandidates.find((value) => value !== undefined && value !== null && String(value).trim());
+  const rawText = textCandidates.find((value) => value !== undefined && value !== null && String(value).trim());
+
+  return {
+    userId: String(rawUserId || '').trim(),
+    text: toNormalizedText(rawText)
+  };
+}
+
 router.post('/webhook/max', async (req, res, next) => {
   try {
-    const userId = String(req.body?.user_id || '').trim();
-    const text = String(req.body?.text || '').trim().replace(/\s+/g, ' ');
+    const { userId, text } = extractIncomingMessage(req.body);
     const logUserId = userId || 'unknown';
+    const logText = text || '<empty>';
 
-    console.log(`${formatLogTimestamp(new Date())} ${logUserId} ${text}`);
+    console.log(`${formatLogTimestamp(new Date())} ${logUserId} ${logText}`);
+    if (!userId || !text) {
+      console.log(`webhook raw payload: ${JSON.stringify(req.body)}`);
+    }
 
     const providedSecret = req.header('x-max-secret');
 
@@ -39,7 +79,7 @@ router.post('/webhook/max', async (req, res, next) => {
     if (!userId) {
       return res.status(400).json({
         ok: false,
-        error: 'user_id is required.'
+        error: 'user_id is required in webhook payload.'
       });
     }
 

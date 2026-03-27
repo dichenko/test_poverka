@@ -7,33 +7,27 @@ CREATE TYPE "AuditEntityType" AS ENUM ('USER', 'ORGANIZATION', 'SUBMISSION', 'AU
 -- Create tables
 CREATE TABLE "organizations" (
   "org_id" BIGSERIAL PRIMARY KEY,
-  "org_name" TEXT NOT NULL,
-  "org_email" TEXT,
   "balance" DOUBLE PRECISION,
+  "org_email" TEXT,
+  "org_name" TEXT NOT NULL,
   "balance_start_of_day" DOUBLE PRECISION,
   "user_tarif" DOUBLE PRECISION
 );
 
 CREATE TABLE "users" (
-  "id" TEXT NOT NULL,
-  "max_user_id" TEXT NOT NULL,
-  "first_name" TEXT NOT NULL,
-  "last_name" TEXT,
-  "full_name" TEXT NOT NULL,
-  "username" TEXT,
-  "phone" TEXT,
-  "role" "UserRole" NOT NULL DEFAULT 'USER',
-  "organization_id" BIGINT,
-  "is_active" BOOLEAN NOT NULL DEFAULT true,
-  "last_login_at" TIMESTAMP(3),
-  "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updated_at" TIMESTAMP(3) NOT NULL,
-  CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+  "org_id" BIGINT,
+  "user_id" BIGSERIAL PRIMARY KEY,
+  "user_tarif" DOUBLE PRECISION,
+  "user_city" TEXT,
+  "user_fullname" TEXT NOT NULL,
+  "user_phone" TEXT,
+  "org_name" TEXT,
+  "org_email" TEXT
 );
 
 CREATE TABLE "meter_submissions" (
   "id" TEXT NOT NULL,
-  "user_id" TEXT NOT NULL,
+  "user_id" BIGINT NOT NULL,
   "organization_id" BIGINT NOT NULL,
   "meter_number" TEXT NOT NULL,
   "current_value" DECIMAL(14,3) NOT NULL,
@@ -52,7 +46,7 @@ CREATE TABLE "submission_status_history" (
   "submission_id" TEXT NOT NULL,
   "old_status" "SubmissionStatus",
   "new_status" "SubmissionStatus" NOT NULL,
-  "changed_by_user_id" TEXT,
+  "changed_by_user_id" BIGINT,
   "reason" TEXT,
   "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "submission_status_history_pkey" PRIMARY KEY ("id")
@@ -60,7 +54,7 @@ CREATE TABLE "submission_status_history" (
 
 CREATE TABLE "audit_logs" (
   "id" TEXT NOT NULL,
-  "actor_user_id" TEXT,
+  "actor_user_id" BIGINT,
   "action" TEXT NOT NULL,
   "entity_type" "AuditEntityType" NOT NULL,
   "entity_id" TEXT,
@@ -73,7 +67,7 @@ CREATE TABLE "audit_logs" (
 
 CREATE TABLE "auth_refresh_tokens" (
   "id" TEXT NOT NULL,
-  "user_id" TEXT NOT NULL,
+  "user_id" BIGINT NOT NULL,
   "token_hash" TEXT NOT NULL,
   "expires_at" TIMESTAMP(3) NOT NULL,
   "revoked_at" TIMESTAMP(3),
@@ -95,7 +89,7 @@ CREATE TABLE "init_data_replays" (
 
 CREATE TABLE "files" (
   "id" TEXT NOT NULL,
-  "owner_user_id" TEXT,
+  "owner_user_id" BIGINT,
   "submission_id" TEXT,
   "storage_key" TEXT NOT NULL,
   "original_name" TEXT NOT NULL,
@@ -109,14 +103,12 @@ CREATE TABLE "files" (
 
 -- Unique indexes
 CREATE UNIQUE INDEX "organizations_org_email_key" ON "organizations"("org_email");
-CREATE UNIQUE INDEX "users_max_user_id_key" ON "users"("max_user_id");
 CREATE UNIQUE INDEX "auth_refresh_tokens_token_hash_key" ON "auth_refresh_tokens"("token_hash");
 CREATE UNIQUE INDEX "init_data_replays_replay_key_key" ON "init_data_replays"("replay_key");
 CREATE UNIQUE INDEX "files_storage_key_key" ON "files"("storage_key");
 
 -- Secondary indexes
-CREATE INDEX "users_organization_id_idx" ON "users"("organization_id");
-CREATE INDEX "users_role_idx" ON "users"("role");
+CREATE INDEX "users_org_id_idx" ON "users"("org_id");
 CREATE INDEX "meter_submissions_user_id_created_at_idx" ON "meter_submissions"("user_id", "created_at" DESC);
 CREATE INDEX "meter_submissions_organization_id_created_at_idx" ON "meter_submissions"("organization_id", "created_at" DESC);
 CREATE INDEX "meter_submissions_status_created_at_idx" ON "meter_submissions"("status", "created_at" DESC);
@@ -131,13 +123,13 @@ CREATE INDEX "files_submission_id_idx" ON "files"("submission_id");
 
 -- Foreign keys
 ALTER TABLE "users"
-  ADD CONSTRAINT "users_organization_id_fkey"
-  FOREIGN KEY ("organization_id") REFERENCES "organizations"("org_id")
+  ADD CONSTRAINT "users_org_id_fkey"
+  FOREIGN KEY ("org_id") REFERENCES "organizations"("org_id")
   ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "meter_submissions"
   ADD CONSTRAINT "meter_submissions_user_id_fkey"
-  FOREIGN KEY ("user_id") REFERENCES "users"("id")
+  FOREIGN KEY ("user_id") REFERENCES "users"("user_id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
 
 ALTER TABLE "meter_submissions"
@@ -152,22 +144,22 @@ ALTER TABLE "submission_status_history"
 
 ALTER TABLE "submission_status_history"
   ADD CONSTRAINT "submission_status_history_changed_by_user_id_fkey"
-  FOREIGN KEY ("changed_by_user_id") REFERENCES "users"("id")
+  FOREIGN KEY ("changed_by_user_id") REFERENCES "users"("user_id")
   ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "audit_logs"
   ADD CONSTRAINT "audit_logs_actor_user_id_fkey"
-  FOREIGN KEY ("actor_user_id") REFERENCES "users"("id")
+  FOREIGN KEY ("actor_user_id") REFERENCES "users"("user_id")
   ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "auth_refresh_tokens"
   ADD CONSTRAINT "auth_refresh_tokens_user_id_fkey"
-  FOREIGN KEY ("user_id") REFERENCES "users"("id")
+  FOREIGN KEY ("user_id") REFERENCES "users"("user_id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
 
 ALTER TABLE "files"
   ADD CONSTRAINT "files_owner_user_id_fkey"
-  FOREIGN KEY ("owner_user_id") REFERENCES "users"("id")
+  FOREIGN KEY ("owner_user_id") REFERENCES "users"("user_id")
   ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "files"

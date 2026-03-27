@@ -48,6 +48,7 @@ export function createApp() {
   app.use(defaultRateLimit);
 
   app.use("/static", express.static(path.resolve(env.STORAGE_LOCAL_PATH)));
+  app.use("/uploads", express.static(path.resolve(env.STORAGE_LOCAL_PATH)));
   app.use(healthRoutes);
   app.use("/api", authRoutes);
   app.use("/api", submissionsRoutes);

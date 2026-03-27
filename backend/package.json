@@ -5,8 +5,10 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:photo-worker": "tsx watch src/photo-worker.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
+    "start:photo-worker": "node dist/photo-worker.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
@@ -26,6 +28,7 @@
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "prisma": "^7.5.0",
+    "sharp": "^0.34.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {

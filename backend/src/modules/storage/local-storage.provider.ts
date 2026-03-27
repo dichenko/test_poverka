@@ -11,6 +11,10 @@ function sanitizeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100) || "file";
 }
 
+function normalizePathForStorage(value: string) {
+  return value.split(path.sep).join("/");
+}
+
 export class LocalStorageProvider implements StorageProvider {
   async saveFile(input: SaveFileInput) {
     if (!allowedMimeTypes.has(input.mimeType)) {
@@ -23,11 +27,17 @@ export class LocalStorageProvider implements StorageProvider {
     const safeName = sanitizeFileName(input.originalName);
     const ext = path.extname(safeName);
     const randomId = crypto.randomUUID();
-    const storageKey = `${randomId}${ext}`;
+    const fileName = `${randomId}${ext}`;
 
     const baseDir = path.resolve(env.STORAGE_LOCAL_PATH);
-    await fs.mkdir(baseDir, { recursive: true });
-    const absolutePath = path.join(baseDir, storageKey);
+    const originalDir = path.resolve(env.PHOTO_ORIGINAL_DIR);
+    await fs.mkdir(originalDir, { recursive: true });
+    const absolutePath = path.join(originalDir, fileName);
+    const relativeStoragePath = path.relative(baseDir, absolutePath);
+    if (relativeStoragePath.startsWith("..") || path.isAbsolute(relativeStoragePath)) {
+      throw new Error("PHOTO_ORIGINAL_DIR must be inside STORAGE_LOCAL_PATH.");
+    }
+    const storageKey = normalizePathForStorage(relativeStoragePath);
     await fs.writeFile(absolutePath, input.buffer);
 
     return {
@@ -49,6 +59,6 @@ export class LocalStorageProvider implements StorageProvider {
   }
 
   getPublicUrl(storageKey: string) {
-    return `${env.STORAGE_PUBLIC_BASE_URL.replace(/\/$/, "")}/${storageKey}`;
+    return `${env.PUBLIC_FILES_BASE_URL.replace(/\/$/, "")}/${normalizePathForStorage(storageKey)}`;
   }
 }

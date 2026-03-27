@@ -24,7 +24,11 @@ const envSchema = z.object({
   AUTH_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(20),
   STORAGE_PROVIDER: z.enum(["local"]).default("local"),
   STORAGE_LOCAL_PATH: z.string().default("./storage"),
-  STORAGE_PUBLIC_BASE_URL: z.string().url().default("http://localhost:3000/static")
+  STORAGE_PUBLIC_BASE_URL: z.string().url().default("http://localhost:3000/static"),
+  PHOTO_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
+  PHOTO_ORIGINAL_DIR: z.string().default("./storage/photos/original"),
+  PHOTO_COMPRESSED_DIR: z.string().default("./storage/photos/compressed"),
+  PUBLIC_FILES_BASE_URL: z.string().url().default("http://localhost:3000/uploads")
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

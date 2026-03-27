@@ -27,7 +27,7 @@ router.get("/admin/organizations", async (_req, res, next) => {
     });
     res.json({
       ok: true,
-      organizations: organizations.map((org) => ({
+      organizations: organizations.map((org: any) => ({
         id: org.id.toString(),
         name: org.name,
         email: org.email,
@@ -111,7 +111,7 @@ router.get("/admin/users", validate(adminListUsersQuerySchema, "query"), async (
 
     res.json({
       ok: true,
-      users: users.map((user) => ({
+      users: users.map((user: any) => ({
         id: user.id,
         maxUserId: user.maxUserId,
         fullName: user.fullName,
@@ -256,7 +256,7 @@ router.get("/admin/submissions", validate(adminListSubmissionsQuerySchema, "quer
 
     res.json({
       ok: true,
-      submissions: submissions.map((item) => ({
+      submissions: submissions.map((item: any) => ({
         id: item.id,
         meterNumber: item.meterNumber,
         currentValue: item.currentValue.toString(),
@@ -295,7 +295,7 @@ router.get(
 
       res.json({
         ok: true,
-        history: history.map((item) => ({
+        history: history.map((item: any) => ({
           id: item.id,
           oldStatus: item.oldStatus,
           newStatus: item.newStatus,
@@ -332,7 +332,7 @@ router.get("/admin/audit-logs", validate(adminAuditLogsQuerySchema, "query"), as
 
     res.json({
       ok: true,
-      logs: logs.map((item) => ({
+      logs: logs.map((item: any) => ({
         id: item.id,
         action: item.action,
         entityType: item.entityType,

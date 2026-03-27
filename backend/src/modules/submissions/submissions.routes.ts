@@ -89,7 +89,7 @@ router.get("/submissions/me", validate(listSubmissionsQuerySchema, "query"), asy
 
     return res.json({
       ok: true,
-      submissions: submissions.map((item) => ({
+      submissions: submissions.map((item: any) => ({
         id: item.id,
         meterNumber: item.meterNumber,
         currentValue: item.currentValue.toString(),

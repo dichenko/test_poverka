@@ -9,7 +9,7 @@ import { logAuditEvent } from "../../services/audit.service";
 import { confirmSubmission } from "../submissions/submissions.service";
 import { maxBotClient } from "./max-bot.client";
 import {
-  miniappOpenMessage,
+  knownUserUnexpectedMessage,
   noPendingSubmissionMessage,
   submissionConfirmedMessage,
   unknownUserMessage
@@ -79,6 +79,17 @@ function formatIncomingLog(userId: string, text: string) {
   return `${now} - ${userId || "-"} - ${safeText || "-"}`;
 }
 
+function formatRemainingPackages(balance: number | null | undefined, userTarif: number | null | undefined) {
+  if (balance == null || userTarif == null || userTarif <= 0) {
+    return "0";
+  }
+  const value = balance / userTarif;
+  if (!Number.isFinite(value) || value < 0) {
+    return "0";
+  }
+  return value.toFixed(1).replace(/\.0$/, "");
+}
+
 router.post("/webhook/max", authRateLimit, async (req, res, next) => {
   try {
     const secret = req.header("X-Max-Bot-Api-Secret");
@@ -98,7 +109,8 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
     }
 
     const user = await prisma.user.findUnique({
-      where: { maxUserId: event.userId }
+      where: { maxUserId: event.userId },
+      include: { organization: true }
     });
     if (!user || !user.isActive) {
       await maxBotClient.sendMessage({
@@ -108,17 +120,26 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true });
     }
 
-    if (event.type === "bot_started" || !isConfirmCommand(event.text)) {
+    if (event.type !== "message_created" && event.type !== "bot_started") {
+      return res.json({ ok: true, skipped: "EVENT_TYPE_IGNORED" });
+    }
+
+    if (!isConfirmCommand(event.text)) {
+      const remainingPackages = formatRemainingPackages(user.organization?.balance, user.organization?.userTarif);
+
       await maxBotClient.sendMessage({
         userId: event.userId,
-        text: miniappOpenMessage(user.fullName),
-        miniappUrl: env.MINIAPP_PUBLIC_URL
+        text: knownUserUnexpectedMessage(event.userId, remainingPackages)
       });
 
       await logAuditEvent({
         actorUserId: user.id,
-        action: "bot.miniapp.link.sent",
+        action: "bot.unexpected.message.reply.sent",
         entityType: "SYSTEM",
+        meta: {
+          eventType: event.type,
+          remainingPackages
+        },
         req
       });
 

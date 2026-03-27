@@ -45,6 +45,34 @@ export function getMaxUserIdFromInitData(initData) {
   }
 }
 
+export function getMaxUserId() {
+  const webApp = getMaxWebApp();
+
+  const unsafeUserId = String(webApp?.initDataUnsafe?.user?.id ?? "").trim();
+  if (unsafeUserId) {
+    return unsafeUserId;
+  }
+
+  const initDataUserId = getMaxUserIdFromInitData(getInitData());
+  if (initDataUserId) {
+    return initDataUserId;
+  }
+
+  const searchParams = new URLSearchParams(window.location.search);
+  const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+  const hashParams = new URLSearchParams(hash);
+
+  return (
+    searchParams.get("user_id") ||
+    searchParams.get("userid") ||
+    searchParams.get("uid") ||
+    hashParams.get("user_id") ||
+    hashParams.get("userid") ||
+    hashParams.get("uid") ||
+    ""
+  );
+}
+
 export function readyWebApp() {
   const webApp = getMaxWebApp();
   if (webApp?.ready) {

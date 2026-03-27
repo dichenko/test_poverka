@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchMe, handshakeWithMax } from "../api/auth";
-import { getInitData, getMaxUserIdFromInitData, readyWebApp } from "../lib/maxWebApp";
+import { getInitData, getMaxUserId, getMaxUserIdFromInitData, readyWebApp } from "../lib/maxWebApp";
 
 export function useAuth() {
   const [loading, setLoading] = useState(true);
@@ -18,6 +18,7 @@ export function useAuth() {
       setLoading(true);
       setError("");
       setErrorCode("");
+      setMaxUserId(getMaxUserId());
       try {
         const initData = getInitData();
         if (!initData) {

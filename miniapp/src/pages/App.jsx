@@ -430,21 +430,12 @@ export default function App() {
   }
 
   if (!accessToken || !user) {
-    if (errorCode === "USER_NOT_FOUND") {
+    if (errorCode === "USER_NOT_FOUND" || errorCode === "INITDATA_MISSING") {
       return (
         <StatusScreen
           title="Вы не в базе"
           description={`Вы не в базе, ваш MAX ID ${maxUserId || "не определен"}☎ Связь с админом @HelpMetr
 📞  Связь с админом +79370332222`}
-        />
-      );
-    }
-    if (errorCode === "INITDATA_MISSING") {
-      return (
-        <StatusScreen
-          title="Не удалось получить данные MAX"
-          description="Откройте miniapp из кнопки в боте MAX, а не напрямую по ссылке."
-          code={errorCode}
         />
       );
     }

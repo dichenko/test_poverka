@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "WaterType" AS ENUM ('HVS', 'GVS');
 
 -- AlterTable

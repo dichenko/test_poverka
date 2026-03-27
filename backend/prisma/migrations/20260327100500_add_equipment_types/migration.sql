@@ -1,4 +1,4 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE "equipment_types" (
   "id" INTEGER NOT NULL,
   "name" TEXT NOT NULL,

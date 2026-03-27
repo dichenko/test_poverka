@@ -8,6 +8,12 @@ interface SendMessagePayload {
   attachments?: Array<Record<string, any>>;
 }
 
+interface SendMessageResult {
+  ok: boolean;
+  status?: number;
+  body?: string;
+}
+
 interface AnswerCallbackPayload {
   callbackId: string;
   notification?: string;
@@ -18,7 +24,7 @@ interface AnswerCallbackPayload {
 }
 
 export class MaxBotClient {
-  async sendMessage(payload: SendMessagePayload) {
+  async sendMessage(payload: SendMessagePayload): Promise<SendMessageResult> {
     const endpoint = new URL("/messages", env.MAX_BOT_API_BASE_URL);
     endpoint.searchParams.set("user_id", payload.userId);
 
@@ -44,12 +50,12 @@ export class MaxBotClient {
           { status: response.status, body: responseBody, userId: payload.userId, endpoint: endpoint.toString() },
           "Failed to send MAX message"
         );
-        return false;
+        return { ok: false, status: response.status, body: responseBody };
       }
-      return true;
+      return { ok: true, status: response.status };
     } catch (error) {
       logger.error({ err: error, userId: payload.userId, endpoint: endpoint.toString() }, "MAX sendMessage failed");
-      return false;
+      return { ok: false };
     }
   }
 

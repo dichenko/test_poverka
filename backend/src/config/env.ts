@@ -14,6 +14,7 @@ const envSchema = z.object({
   MAX_BOT_TOKEN: z.string().min(1),
   MAX_WEBHOOK_SECRET: z.string().min(1),
   MAX_BOT_API_BASE_URL: z.string().url().default("https://botapi.max.ru"),
+  MAX_WEB_APP: z.string().min(1).optional(),
   MINIAPP_PUBLIC_URL: z.string().url(),
   BACKEND_PUBLIC_URL: z.string().url(),
   MAX_INITDATA_TTL_SECONDS: z.coerce.number().int().positive().default(300),

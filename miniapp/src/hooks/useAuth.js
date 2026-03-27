@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { fetchMe, handshakeWithMax } from "../api/auth";
-import { getInitData, readyWebApp } from "../lib/maxWebApp";
+import { getInitData, getMaxUserIdFromInitData, readyWebApp } from "../lib/maxWebApp";
 
 export function useAuth() {
   const [loading, setLoading] = useState(true);
   const [accessToken, setAccessToken] = useState("");
   const [user, setUser] = useState(null);
+  const [maxUserId, setMaxUserId] = useState("");
   const [error, setError] = useState("");
   const [errorCode, setErrorCode] = useState("");
 
@@ -22,6 +23,7 @@ export function useAuth() {
         if (!initData) {
           throw Object.assign(new Error("MAX initData is missing."), { code: "INITDATA_MISSING" });
         }
+        setMaxUserId(getMaxUserIdFromInitData(initData));
         const auth = await handshakeWithMax(initData);
         if (!mounted) {
           return;
@@ -56,6 +58,7 @@ export function useAuth() {
     loading,
     accessToken,
     user,
+    maxUserId,
     error,
     errorCode
   };

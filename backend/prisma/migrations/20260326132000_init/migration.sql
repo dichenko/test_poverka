@@ -17,6 +17,7 @@ CREATE TABLE "organizations" (
 CREATE TABLE "users" (
   "org_id" BIGINT,
   "user_id" BIGSERIAL PRIMARY KEY,
+  "role" "UserRole" NOT NULL DEFAULT 'USER',
   "user_tarif" DOUBLE PRECISION,
   "user_city" TEXT,
   "user_fullname" TEXT NOT NULL,

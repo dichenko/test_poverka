@@ -13,11 +13,11 @@ import { confirmSubmission, createDraftSubmission, listMySubmissions } from "../
 import { useAuth } from "../hooks/useAuth";
 
 const submissionSchema = z.object({
-  meterNumber: z.string().trim().min(3, "Р’РІРµРґРёС‚Рµ РЅРѕРјРµСЂ РїСЂРёР±РѕСЂР°"),
+  meterNumber: z.string().trim().min(3, "Введите номер прибора"),
   currentValue: z
     .string()
     .trim()
-    .regex(/^\d+([.,]\d{1,3})?$/, "Р’РІРµРґРёС‚Рµ РєРѕСЂСЂРµРєС‚РЅРѕРµ С‡РёСЃР»РѕРІРѕРµ Р·РЅР°С‡РµРЅРёРµ")
+    .regex(/^\d+([.,]\d{1,3})?$/, "Введите корректное числовое значение")
 });
 
 function StatusScreen({ title, description, code }) {
@@ -26,7 +26,7 @@ function StatusScreen({ title, description, code }) {
       <div className="card">
         <h2>{title}</h2>
         <p style={{ whiteSpace: "pre-line" }}>{description}</p>
-        {code ? <p>РљРѕРґ: {code}</p> : null}
+        {code ? <p>Код: {code}</p> : null}
       </div>
     </div>
   );
@@ -58,7 +58,7 @@ function UserPanel({ accessToken }) {
       setPending(response.submission);
       await loadRecent();
     } catch (err) {
-      setError(err.message || "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ С‡РµСЂРЅРѕРІРёРє");
+      setError(err.message || "Не удалось создать черновик");
     } finally {
       setLoading(false);
     }
@@ -75,7 +75,7 @@ function UserPanel({ accessToken }) {
       setForm({ meterNumber: "", currentValue: "" });
       await loadRecent();
     } catch (err) {
-      setError(err.message || "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґС‚РІРµСЂРґРёС‚СЊ Р·Р°СЏРІРєСѓ");
+      setError(err.message || "Не удалось подтвердить заявку");
     } finally {
       setLoading(false);
     }
@@ -87,28 +87,28 @@ function UserPanel({ accessToken }) {
 
   return (
     <div>
-      <h3>РџРµСЂРµРґР°С‡Р° РїРѕРєР°Р·Р°РЅРёР№</h3>
+      <h3>Передача показаний</h3>
       <form onSubmit={submitDraft}>
         <div className="field">
-          <label htmlFor="meterNumber">РќРѕРјРµСЂ СЃС‡РµС‚С‡РёРєР°</label>
+          <label htmlFor="meterNumber">Номер счетчика</label>
           <input
             id="meterNumber"
             value={form.meterNumber}
             onChange={(event) => setForm((prev) => ({ ...prev, meterNumber: event.target.value }))}
-            placeholder="РќР°РїСЂРёРјРµСЂ 123456"
+            placeholder="Например 123456"
           />
         </div>
         <div className="field">
-          <label htmlFor="currentValue">РўРµРєСѓС‰РµРµ Р·РЅР°С‡РµРЅРёРµ</label>
+          <label htmlFor="currentValue">Текущее значение</label>
           <input
             id="currentValue"
             value={form.currentValue}
             onChange={(event) => setForm((prev) => ({ ...prev, currentValue: event.target.value }))}
-            placeholder="РќР°РїСЂРёРјРµСЂ 88.5"
+            placeholder="Например 88.5"
           />
         </div>
         <button className="button" type="submit" disabled={loading}>
-          {loading ? "РЎРѕС…СЂР°РЅРµРЅРёРµ..." : "РЎРѕР·РґР°С‚СЊ Р·Р°СЏРІРєСѓ"}
+          {loading ? "Сохранение..." : "Создать заявку"}
         </button>
       </form>
 
@@ -116,23 +116,23 @@ function UserPanel({ accessToken }) {
 
       {pending ? (
         <div className="alert info">
-          <p>РџСЂРѕРІРµСЂСЊС‚Рµ РґР°РЅРЅС‹Рµ РїРµСЂРµРґ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµРј:</p>
-          <p>РЎС‡РµС‚С‡РёРє: {pending.meterNumber}</p>
-          <p>РџРѕРєР°Р·Р°РЅРёРµ: {pending.currentValue}</p>
+          <p>Проверьте данные перед подтверждением:</p>
+          <p>Счетчик: {pending.meterNumber}</p>
+          <p>Показание: {pending.currentValue}</p>
           <button className="button secondary" type="button" onClick={confirmCurrent} disabled={loading}>
-            РџРѕРґС‚РІРµСЂРґРёС‚СЊ РґР°РЅРЅС‹Рµ
+            Подтвердить данные
           </button>
         </div>
       ) : null}
 
-      <h3>РњРѕРё РїРѕСЃР»РµРґРЅРёРµ Р·Р°СЏРІРєРё</h3>
+      <h3>Мои последние заявки</h3>
       <table>
         <thead>
           <tr>
-            <th>Р”Р°С‚Р°</th>
-            <th>РЎС‡РµС‚С‡РёРє</th>
-            <th>Р—РЅР°С‡РµРЅРёРµ</th>
-            <th>РЎС‚Р°С‚СѓСЃ</th>
+            <th>Дата</th>
+            <th>Счетчик</th>
+            <th>Значение</th>
+            <th>Статус</th>
           </tr>
         </thead>
         <tbody>
@@ -146,7 +146,7 @@ function UserPanel({ accessToken }) {
           ))}
           {!recent.length ? (
             <tr>
-              <td colSpan={4}>Р—Р°СЏРІРѕРє РїРѕРєР° РЅРµС‚</td>
+              <td colSpan={4}>Заявок пока нет</td>
             </tr>
           ) : null}
         </tbody>
@@ -186,7 +186,7 @@ function AdminPanel({ accessToken }) {
       setSubmissions(submissionsData.submissions || []);
       setLogs(logsData.logs || []);
     } catch (err) {
-      setError(err.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р°РґРјРёРЅ-РґР°РЅРЅС‹Рµ");
+      setError(err.message || "Не удалось загрузить админ-данные");
     }
   }
 
@@ -218,7 +218,7 @@ function AdminPanel({ accessToken }) {
       });
       await loadBaseData();
     } catch (err) {
-      setError(err.message || "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ");
+      setError(err.message || "Не удалось создать пользователя");
     }
   }
 
@@ -227,7 +227,7 @@ function AdminPanel({ accessToken }) {
       await updateUser(user.id, { isActive: !user.isActive }, accessToken);
       await loadBaseData();
     } catch (err) {
-      setError(err.message || "РќРµ СѓРґР°Р»РѕСЃСЊ РёР·РјРµРЅРёС‚СЊ СЃС‚Р°С‚СѓСЃ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ");
+      setError(err.message || "Не удалось изменить статус пользователя");
     }
   }
 
@@ -236,24 +236,24 @@ function AdminPanel({ accessToken }) {
       const data = await getSubmissionHistory(submissionId, accessToken);
       setHistory(data.history || []);
     } catch (err) {
-      setError(err.message || "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РёСЃС‚РѕСЂРёСЋ СЃС‚Р°С‚СѓСЃРѕРІ");
+      setError(err.message || "Не удалось получить историю статусов");
     }
   }
 
   return (
     <div>
-      <h3>РђРґРјРёРЅ-РїР°РЅРµР»СЊ</h3>
+      <h3>Админ-панель</h3>
       {error ? <div className="alert error">{error}</div> : null}
       <div className="tabs">
         <button className={`tab ${tab === "users" ? "active" : ""}`} onClick={() => setTab("users")} type="button">
-          РџРѕР»СЊР·РѕРІР°С‚РµР»Рё
+          Пользователи
         </button>
         <button
           className={`tab ${tab === "submissions" ? "active" : ""}`}
           onClick={() => setTab("submissions")}
           type="button"
         >
-          Р—Р°СЏРІРєРё
+          Заявки
         </button>
         <button className={`tab ${tab === "logs" ? "active" : ""}`} onClick={() => setTab("logs")} type="button">
           Audit
@@ -272,14 +272,14 @@ function AdminPanel({ accessToken }) {
                 />
               </div>
               <div className="field" style={{ flex: "1 1 180px" }}>
-                <label>РРјСЏ</label>
+                <label>Имя</label>
                 <input
                   value={userForm.firstName}
                   onChange={(event) => setUserForm((prev) => ({ ...prev, firstName: event.target.value }))}
                 />
               </div>
               <div className="field" style={{ flex: "1 1 180px" }}>
-                <label>Р¤Р°РјРёР»РёСЏ</label>
+                <label>Фамилия</label>
                 <input
                   value={userForm.lastName}
                   onChange={(event) => setUserForm((prev) => ({ ...prev, lastName: event.target.value }))}
@@ -288,7 +288,7 @@ function AdminPanel({ accessToken }) {
             </div>
             <div className="row">
               <div className="field" style={{ flex: "1 1 150px" }}>
-                <label>Р РѕР»СЊ</label>
+                <label>Роль</label>
                 <select
                   value={userForm.role}
                   onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))}
@@ -298,12 +298,12 @@ function AdminPanel({ accessToken }) {
                 </select>
               </div>
               <div className="field" style={{ flex: "2 1 240px" }}>
-                <label>РћСЂРіР°РЅРёР·Р°С†РёСЏ</label>
+                <label>Организация</label>
                 <select
                   value={userForm.organizationId}
                   onChange={(event) => setUserForm((prev) => ({ ...prev, organizationId: event.target.value }))}
                 >
-                  <option value="">Р‘РµР· РѕСЂРіР°РЅРёР·Р°С†РёРё</option>
+                  <option value="">Без организации</option>
                   {organizations.map((org) => (
                     <option key={org.id} value={org.id}>
                       {org.name} ({org.inn})
@@ -313,18 +313,18 @@ function AdminPanel({ accessToken }) {
               </div>
             </div>
             <button className="button" type="submit">
-              РЎРѕР·РґР°С‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
+              Создать пользователя
             </button>
           </form>
 
           <table>
             <thead>
               <tr>
-                <th>РРјСЏ</th>
+                <th>Имя</th>
                 <th>MAX ID</th>
-                <th>Р РѕР»СЊ</th>
-                <th>РћСЂРіР°РЅРёР·Р°С†РёСЏ</th>
-                <th>РђРєС‚РёРІРµРЅ</th>
+                <th>Роль</th>
+                <th>Организация</th>
+                <th>Активен</th>
                 <th />
               </tr>
             </thead>
@@ -335,10 +335,10 @@ function AdminPanel({ accessToken }) {
                   <td>{item.maxUserId}</td>
                   <td>{item.role}</td>
                   <td>{item.organizationName || "-"}</td>
-                  <td>{item.isActive ? "Р”Р°" : "РќРµС‚"}</td>
+                  <td>{item.isActive ? "Да" : "Нет"}</td>
                   <td>
                     <button className="button" type="button" onClick={() => toggleUser(item)}>
-                      {item.isActive ? "Р”РµР°РєС‚РёРІРёСЂРѕРІР°С‚СЊ" : "РђРєС‚РёРІРёСЂРѕРІР°С‚СЊ"}
+                      {item.isActive ? "Деактивировать" : "Активировать"}
                     </button>
                   </td>
                 </tr>
@@ -353,12 +353,12 @@ function AdminPanel({ accessToken }) {
           <table>
             <thead>
               <tr>
-                <th>Р”Р°С‚Р°</th>
-                <th>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ</th>
-                <th>РћСЂРіР°РЅРёР·Р°С†РёСЏ</th>
-                <th>РЎС‡РµС‚С‡РёРє</th>
-                <th>Р—РЅР°С‡РµРЅРёРµ</th>
-                <th>РЎС‚Р°С‚СѓСЃ</th>
+                <th>Дата</th>
+                <th>Пользователь</th>
+                <th>Организация</th>
+                <th>Счетчик</th>
+                <th>Значение</th>
+                <th>Статус</th>
                 <th />
               </tr>
             </thead>
@@ -373,7 +373,7 @@ function AdminPanel({ accessToken }) {
                   <td>{item.status}</td>
                   <td>
                     <button className="button" type="button" onClick={() => loadHistory(item.id)}>
-                      РСЃС‚РѕСЂРёСЏ
+                      История
                     </button>
                   </td>
                 </tr>
@@ -382,10 +382,10 @@ function AdminPanel({ accessToken }) {
           </table>
           {history.length ? (
             <div className="alert info">
-              <strong>РСЃС‚РѕСЂРёСЏ СЃС‚Р°С‚СѓСЃРѕРІ</strong>
+              <strong>История статусов</strong>
               {history.map((entry) => (
                 <div key={entry.id}>
-                  {new Date(entry.createdAt).toLocaleString()} {entry.oldStatus || "-"} в†’ {entry.newStatus}{" "}
+                  {new Date(entry.createdAt).toLocaleString()} {entry.oldStatus || "-"} → {entry.newStatus}{" "}
                   {entry.changedBy ? `(${entry.changedBy.fullName})` : ""}
                 </div>
               ))}
@@ -398,7 +398,7 @@ function AdminPanel({ accessToken }) {
         <table>
           <thead>
             <tr>
-              <th>Р”Р°С‚Р°</th>
+              <th>Дата</th>
               <th>Action</th>
               <th>Entity</th>
               <th>Actor</th>
@@ -426,7 +426,7 @@ export default function App() {
   const { loading, accessToken, user, maxUserId, error, errorCode } = useAuth();
 
   if (loading) {
-    return <StatusScreen title="Р—Р°РіСЂСѓР·РєР°" description="Р’С‹РїРѕР»РЅСЏРµС‚СЃСЏ Р°РІС‚РѕСЂРёР·Р°С†РёСЏ С‡РµСЂРµР· MAX WebApp..." />;
+    return <StatusScreen title="Загрузка" description="Выполняется авторизация через MAX WebApp..." />;
   }
 
   if (!accessToken || !user) {
@@ -434,21 +434,30 @@ export default function App() {
       return (
         <StatusScreen
           title="Вы не в базе"
-          description={`Вы не в базе, ваш MAX ID ${maxUserId || "не определен"}\u260E Связь с админом @HelpMetr
-\uD83D\uDCDE  Связь с админом +79370332222`}
+          description={`Вы не в базе, ваш MAX ID ${maxUserId || "не определен"}☎ Связь с админом @HelpMetr
+📞  Связь с админом +79370332222`}
+        />
+      );
+    }
+    if (errorCode === "INITDATA_MISSING") {
+      return (
+        <StatusScreen
+          title="Не удалось получить данные MAX"
+          description="Откройте miniapp из кнопки в боте MAX, а не напрямую по ссылке."
+          code={errorCode}
         />
       );
     }
     if (errorCode === "USER_INACTIVE") {
       return (
         <StatusScreen
-          title="РђРєРєР°СѓРЅС‚ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ"
-          description="Р”РѕСЃС‚СѓРї Рє miniapp РѕС‚РєР»СЋС‡РµРЅ. РћР±СЂР°С‚РёС‚РµСЃСЊ Рє Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂСѓ."
+          title="Аккаунт заблокирован"
+          description="Доступ к miniapp отключен. Обратитесь к администратору."
           code={errorCode}
         />
       );
     }
-    return <StatusScreen title="РћС€РёР±РєР° Р°РІС‚РѕСЂРёР·Р°С†РёРё" description={error || "Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ"} code={errorCode} />;
+    return <StatusScreen title="Ошибка авторизации" description={error || "Доступ запрещен"} code={errorCode} />;
   }
 
   return (
@@ -456,13 +465,11 @@ export default function App() {
       <div className="card">
         <h2>{user.fullName}</h2>
         <p>
-          Р РѕР»СЊ: <b>{user.role}</b>
-          {user.organizationName ? `, РѕСЂРіР°РЅРёР·Р°С†РёСЏ: ${user.organizationName}` : ""}
+          Роль: <b>{user.role}</b>
+          {user.organizationName ? `, организация: ${user.organizationName}` : ""}
         </p>
         {user.role === "ADMIN" ? <AdminPanel accessToken={accessToken} /> : <UserPanel accessToken={accessToken} />}
       </div>
     </div>
   );
 }
-
-

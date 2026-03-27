@@ -1,5 +1,12 @@
 export function getMaxWebApp() {
-  return window.WebApp || window.Telegram?.WebApp || null;
+  return (
+    window.WebApp ||
+    window.Telegram?.WebApp ||
+    window.Max?.WebApp ||
+    window.MAX?.WebApp ||
+    window.MiniApp ||
+    null
+  );
 }
 
 export function getInitData() {
@@ -7,8 +14,20 @@ export function getInitData() {
   if (webApp?.initData) {
     return webApp.initData;
   }
-  const params = new URLSearchParams(window.location.search);
-  return params.get("initData") || "";
+
+  const searchParams = new URLSearchParams(window.location.search);
+  const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+  const hashParams = new URLSearchParams(hash);
+
+  return (
+    searchParams.get("initData") ||
+    searchParams.get("init_data") ||
+    searchParams.get("tgWebAppData") ||
+    hashParams.get("initData") ||
+    hashParams.get("init_data") ||
+    hashParams.get("tgWebAppData") ||
+    ""
+  );
 }
 
 export function getMaxUserIdFromInitData(initData) {

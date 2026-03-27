@@ -10,12 +10,14 @@ import { logAuditEvent } from "../../services/audit.service";
 import { getStorageProvider } from "../storage/storage.service";
 import {
   cancelPendingSubmission,
+  getLatestPendingSubmission,
   getAwaitingPhotoSubmission,
   markSubmissionAwaitingPhoto
 } from "../submissions/submissions.service";
 import { maxBotClient } from "./max-bot.client";
 import {
   knownUserUnexpectedMessage,
+  noPendingSubmissionMessage,
   photoRequiredMessage,
   photoSavedAndConfirmedMessage,
   profileMessage,
@@ -236,6 +238,198 @@ async function getUserProfilePayload(userId: bigint) {
   };
 }
 
+function parseActionToken(value: string) {
+  if (!value) {
+    return { kind: "none", submissionId: "" } as const;
+  }
+  const normalized = value.trim();
+  const lowered = normalized.toLowerCase();
+  if (lowered === "подтвердить" || lowered === "confirm") {
+    return { kind: "confirm", submissionId: "" } as const;
+  }
+  if (lowered === "отменить" || lowered === "cancel") {
+    return { kind: "cancel", submissionId: "" } as const;
+  }
+  if (normalized.startsWith("confirm_submission:")) {
+    return { kind: "confirm", submissionId: normalized.slice("confirm_submission:".length).trim() } as const;
+  }
+  if (normalized.startsWith("cancel_submission:")) {
+    return { kind: "cancel", submissionId: normalized.slice("cancel_submission:".length).trim() } as const;
+  }
+  return { kind: "none", submissionId: "" } as const;
+}
+
+function parseActionTokenFromUnknown(value: unknown, depth = 0): { kind: "confirm" | "cancel" | "none"; submissionId: string } {
+  if (depth > 8 || value == null) {
+    return { kind: "none", submissionId: "" };
+  }
+
+  if (typeof value === "string") {
+    const fromText = parseActionToken(value);
+    if (fromText.kind !== "none") {
+      return fromText;
+    }
+
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return parseActionTokenFromUnknown(parsed, depth + 1);
+      } catch {
+        return { kind: "none", submissionId: "" };
+      }
+    }
+
+    return { kind: "none", submissionId: "" };
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const parsed = parseActionTokenFromUnknown(item, depth + 1);
+      if (parsed.kind !== "none") {
+        return parsed;
+      }
+    }
+    return { kind: "none", submissionId: "" };
+  }
+
+  if (typeof value === "object") {
+    const candidateKeys = [
+      "payload",
+      "text",
+      "data",
+      "command",
+      "action",
+      "value",
+      "callback",
+      "callback_data",
+      "message"
+    ];
+    for (const key of candidateKeys) {
+      const nested = (value as Record<string, unknown>)[key];
+      if (nested == null) {
+        continue;
+      }
+      const parsed = parseActionTokenFromUnknown(nested, depth + 1);
+      if (parsed.kind !== "none") {
+        return parsed;
+      }
+    }
+  }
+
+  return { kind: "none", submissionId: "" };
+}
+
+function resolveActionFromEvent(event: { callbackPayload: string; text: string }, body: any) {
+  const candidates: unknown[] = [
+    body?.callback?.payload,
+    body?.payload?.callback?.payload,
+    body?.message?.callback?.payload,
+    body?.message?.body?.payload,
+    body?.message?.payload,
+    body?.payload?.message?.payload,
+    body?.payload?.message?.body?.payload,
+    body?.payload,
+    event.callbackPayload,
+    event.text
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = parseActionTokenFromUnknown(candidate);
+    if (parsed.kind !== "none") {
+      return parsed;
+    }
+  }
+
+  return { kind: "none", submissionId: "" } as const;
+}
+
+async function resolveActionSubmissionId(userId: string, explicitSubmissionId: string) {
+  if (explicitSubmissionId) {
+    return explicitSubmissionId;
+  }
+  const pending = await getLatestPendingSubmission(userId);
+  return pending?.id ?? "";
+}
+
+async function handleConfirmAction(input: {
+  submissionId: string;
+  userId: string;
+  callbackId?: string;
+  req: any;
+}) {
+  const submission = await markSubmissionAwaitingPhoto({
+    submissionId: input.submissionId,
+    userId: input.userId
+  });
+
+  await maxBotClient.sendMessage({
+    userId: input.userId,
+    text: photoRequiredMessage(),
+    attachments: cancelKeyboard(submission.id)
+  });
+
+  await logAuditEvent({
+    actorUserId: input.userId,
+    action: "bot.submission.awaiting_photo",
+    entityType: "SUBMISSION",
+    entityId: submission.id,
+    req: input.req
+  });
+
+  if (input.callbackId) {
+    await maxBotClient.answerCallback({
+      callbackId: input.callbackId,
+      notification: "Прикрепите фотографию счетчика"
+    });
+  }
+}
+
+async function handleCancelAction(input: {
+  submissionId: string;
+  userId: string;
+  callbackId?: string;
+  req: any;
+  profileText: string;
+}) {
+  const cancelled = await cancelPendingSubmission({
+    submissionId: input.submissionId,
+    userId: input.userId
+  });
+
+  const storageProvider = getStorageProvider();
+  for (const storageKey of cancelled.storageKeys) {
+    try {
+      await storageProvider.deleteFile(storageKey);
+    } catch (error) {
+      logger.warn({ err: error, storageKey }, "Failed to delete file for canceled submission");
+    }
+  }
+
+  await logAuditEvent({
+    actorUserId: input.userId,
+    action: "bot.submission.cancelled",
+    entityType: "SUBMISSION",
+    entityId: input.submissionId,
+    req: input.req
+  });
+
+  await maxBotClient.sendMessage({
+    userId: input.userId,
+    text: `${submissionCancelledMessage()}\n\n${input.profileText}`
+  });
+
+  if (input.callbackId) {
+    await maxBotClient.answerCallback({
+      callbackId: input.callbackId,
+      notification: "Заявка отменена"
+    });
+  }
+}
+
 router.post("/webhook/max", authRateLimit, async (req, res, next) => {
   try {
     const secret = req.header("X-Max-Bot-Api-Secret");
@@ -274,79 +468,47 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true });
     }
 
-    if (event.type === "message_callback") {
-      if (event.callbackPayload.startsWith("confirm_submission:")) {
-        const submissionId = event.callbackPayload.slice("confirm_submission:".length).trim();
-        if (submissionId) {
-          const submission = await markSubmissionAwaitingPhoto({
-            submissionId,
-            userId: event.userId
-          });
+    const isCallbackEvent = event.type === "message_callback" || Boolean(event.callbackId);
 
-          await maxBotClient.sendMessage({
-            userId: event.userId,
-            text: photoRequiredMessage(),
-            attachments: cancelKeyboard(submission.id)
-          });
+    if (isCallbackEvent) {
+      const action = resolveActionFromEvent(event, req.body);
+      const actionSubmissionId = await resolveActionSubmissionId(event.userId, action.submissionId);
 
-          await logAuditEvent({
-            actorUserId: event.userId,
-            action: "bot.submission.awaiting_photo",
-            entityType: "SUBMISSION",
-            entityId: submission.id,
-            req
-          });
-
-          if (event.callbackId) {
-            await maxBotClient.answerCallback({
-              callbackId: event.callbackId,
-              notification: "Прикрепите фотографию счетчика"
-            });
-          }
-
-          return res.json({ ok: true, handled: "SUBMISSION_AWAITING_PHOTO" });
-        }
+      if (action.kind === "confirm" && actionSubmissionId) {
+        await handleConfirmAction({
+          submissionId: actionSubmissionId,
+          userId: event.userId,
+          callbackId: event.callbackId || undefined,
+          req
+        });
+        return res.json({ ok: true, handled: "SUBMISSION_AWAITING_PHOTO" });
       }
 
-      if (event.callbackPayload.startsWith("cancel_submission:")) {
-        const submissionId = event.callbackPayload.slice("cancel_submission:".length).trim();
-        if (submissionId) {
-          const cancelled = await cancelPendingSubmission({
-            submissionId,
-            userId: event.userId
+      if (action.kind === "cancel" && actionSubmissionId) {
+        await handleCancelAction({
+          submissionId: actionSubmissionId,
+          userId: event.userId,
+          callbackId: event.callbackId || undefined,
+          req,
+          profileText: profile.text
+        });
+        return res.json({ ok: true, handled: "SUBMISSION_CANCELLED" });
+      }
+
+      if (action.kind !== "none" && !actionSubmissionId) {
+        await maxBotClient.sendMessage({
+          userId: event.userId,
+          text: `${noPendingSubmissionMessage()}\n\n${profile.text}`
+        });
+
+        if (event.callbackId) {
+          await maxBotClient.answerCallback({
+            callbackId: event.callbackId,
+            notification: "Нет заявок для действия"
           });
-
-          const storageProvider = getStorageProvider();
-          for (const storageKey of cancelled.storageKeys) {
-            try {
-              await storageProvider.deleteFile(storageKey);
-            } catch (error) {
-              logger.warn({ err: error, storageKey }, "Failed to delete file for canceled submission");
-            }
-          }
-
-          await logAuditEvent({
-            actorUserId: event.userId,
-            action: "bot.submission.cancelled",
-            entityType: "SUBMISSION",
-            entityId: submissionId,
-            req
-          });
-
-          await maxBotClient.sendMessage({
-            userId: event.userId,
-            text: `${submissionCancelledMessage()}\n\n${profile.text}`
-          });
-
-          if (event.callbackId) {
-            await maxBotClient.answerCallback({
-              callbackId: event.callbackId,
-              notification: "Заявка отменена"
-            });
-          }
-
-          return res.json({ ok: true, handled: "SUBMISSION_CANCELLED" });
         }
+
+        return res.json({ ok: true, handled: "NO_PENDING_SUBMISSION" });
       }
 
       if (event.callbackId) {
@@ -360,6 +522,35 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
 
     if (event.type !== "message_created") {
       return res.json({ ok: true, skipped: "EVENT_TYPE_NOT_SUPPORTED" });
+    }
+
+    const messageAction = resolveActionFromEvent(event, req.body);
+    const messageActionSubmissionId = await resolveActionSubmissionId(event.userId, messageAction.submissionId);
+    if (messageAction.kind === "confirm" && messageActionSubmissionId) {
+      await handleConfirmAction({
+        submissionId: messageActionSubmissionId,
+        userId: event.userId,
+        req
+      });
+      return res.json({ ok: true, handled: "SUBMISSION_AWAITING_PHOTO" });
+    }
+
+    if (messageAction.kind === "cancel" && messageActionSubmissionId) {
+      await handleCancelAction({
+        submissionId: messageActionSubmissionId,
+        userId: event.userId,
+        req,
+        profileText: profile.text
+      });
+      return res.json({ ok: true, handled: "SUBMISSION_CANCELLED" });
+    }
+
+    if (messageAction.kind !== "none" && !messageActionSubmissionId) {
+      await maxBotClient.sendMessage({
+        userId: event.userId,
+        text: `${noPendingSubmissionMessage()}\n\n${profile.text}`
+      });
+      return res.json({ ok: true, handled: "NO_PENDING_SUBMISSION" });
     }
 
     const awaiting = await getAwaitingPhotoSubmission(event.userId);

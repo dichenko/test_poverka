@@ -11,7 +11,7 @@ function parseMeterValue(rawValue: string) {
   return normalized;
 }
 
-function parseUserId(raw: string) {
+export function parseUserId(raw: string) {
   try {
     return BigInt(raw);
   } catch {
@@ -67,7 +67,9 @@ export async function createDraftSubmission(input: {
         phone: input.phone,
         waterType: input.waterType,
         equipmentTypeId: input.equipmentTypeId,
-        productionYear: input.productionYear
+        productionYear: input.productionYear,
+        awaitingPhoto: false,
+        confirmedAt: null
       },
       include: { equipmentType: true }
     });
@@ -96,7 +98,8 @@ export async function createDraftSubmission(input: {
       waterType: input.waterType,
       equipmentTypeId: input.equipmentTypeId,
       productionYear: input.productionYear,
-      status: SubmissionStatus.PENDING_CONFIRMATION
+      status: SubmissionStatus.PENDING_CONFIRMATION,
+      awaitingPhoto: false
     },
     include: { equipmentType: true }
   });
@@ -145,7 +148,8 @@ export async function confirmSubmission(input: {
     where: { id: submission.id },
     data: {
       status: SubmissionStatus.CONFIRMED,
-      confirmedAt: new Date()
+      confirmedAt: new Date(),
+      awaitingPhoto: false
     }
   });
 
@@ -160,6 +164,68 @@ export async function confirmSubmission(input: {
   });
 
   return updated;
+}
+
+export async function markSubmissionAwaitingPhoto(input: { submissionId: string; userId: string }) {
+  const userId = parseUserId(input.userId);
+  const submission = await prisma.meterSubmission.findUnique({
+    where: { id: input.submissionId }
+  });
+  if (!submission || submission.userId !== userId) {
+    throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
+  }
+  if (submission.status !== SubmissionStatus.PENDING_CONFIRMATION) {
+    throw new AppError("Submission is not pending confirmation.", 409, "SUBMISSION_INVALID_STATUS");
+  }
+
+  return prisma.meterSubmission.update({
+    where: { id: submission.id },
+    data: { awaitingPhoto: true },
+    include: { equipmentType: true }
+  });
+}
+
+export async function getAwaitingPhotoSubmission(userIdRaw: string) {
+  const userId = parseUserId(userIdRaw);
+  return prisma.meterSubmission.findFirst({
+    where: {
+      userId,
+      status: SubmissionStatus.PENDING_CONFIRMATION,
+      awaitingPhoto: true
+    },
+    include: {
+      equipmentType: true
+    },
+    orderBy: { createdAt: "desc" }
+  });
+}
+
+export async function cancelPendingSubmission(input: { submissionId: string; userId: string }) {
+  const userId = parseUserId(input.userId);
+  const submission = await prisma.meterSubmission.findUnique({
+    where: { id: input.submissionId },
+    include: { files: true, user: true, organization: true }
+  });
+
+  if (!submission || submission.userId !== userId) {
+    throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
+  }
+  if (submission.status !== SubmissionStatus.PENDING_CONFIRMATION) {
+    throw new AppError("Submission is not pending confirmation.", 409, "SUBMISSION_INVALID_STATUS");
+  }
+
+  const storageKeys = submission.files.map((item) => item.storageKey);
+
+  await prisma.$transaction([
+    prisma.submissionStatusHistory.deleteMany({ where: { submissionId: submission.id } }),
+    prisma.fileEntity.deleteMany({ where: { submissionId: submission.id } }),
+    prisma.meterSubmission.delete({ where: { id: submission.id } })
+  ]);
+
+  return {
+    submission,
+    storageKeys
+  };
 }
 
 export async function listMySubmissions(input: {

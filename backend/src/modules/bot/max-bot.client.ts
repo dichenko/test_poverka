@@ -14,6 +14,13 @@ interface SendMessageResult {
   body?: string;
 }
 
+interface GetMessageResult {
+  ok: boolean;
+  status?: number;
+  body?: string;
+  message?: any;
+}
+
 interface AnswerCallbackPayload {
   callbackId: string;
   notification?: string;
@@ -55,6 +62,31 @@ export class MaxBotClient {
       return { ok: true, status: response.status };
     } catch (error) {
       logger.error({ err: error, userId: payload.userId, endpoint: endpoint.toString() }, "MAX sendMessage failed");
+      return { ok: false };
+    }
+  }
+
+  async getMessage(mid: string): Promise<GetMessageResult> {
+    const endpoint = new URL(`/messages/${encodeURIComponent(mid)}`, env.MAX_BOT_API_BASE_URL);
+    try {
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers: {
+          Authorization: env.MAX_BOT_TOKEN
+        }
+      });
+      if (!response.ok) {
+        const responseBody = await response.text();
+        logger.error(
+          { status: response.status, body: responseBody, mid, endpoint: endpoint.toString() },
+          "Failed to get MAX message"
+        );
+        return { ok: false, status: response.status, body: responseBody };
+      }
+      const data: any = await response.json().catch(() => ({}));
+      return { ok: true, status: response.status, message: data?.message ?? data };
+    } catch (error) {
+      logger.error({ err: error, mid, endpoint: endpoint.toString() }, "MAX getMessage failed");
       return { ok: false };
     }
   }

@@ -105,7 +105,7 @@ function UserPanel({ accessToken }) {
         equipmentTypeId: Number(parsed.data.equipmentTypeId)
       };
       await createDraftSubmission(payload, accessToken);
-      setSavedNotice("Заявка отправлена в бот. Подтвердите или отредактируйте ее в сообщении.");
+      setSavedNotice("Заявка отправлена в бот. Подтвердите ее с фото или отмените в сообщении.");
       setTimeout(() => closeWebApp(), 250);
     } catch (err) {
       setError(err.message || "Не удалось создать черновик");

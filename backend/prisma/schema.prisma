@@ -85,6 +85,7 @@ model MeterSubmission {
   waterType       WaterType?       @map("water_type")
   equipmentTypeId Int?             @map("equipment_type_id")
   productionYear  Int?             @map("production_year")
+  awaitingPhoto   Boolean          @default(false) @map("awaiting_photo")
   status          SubmissionStatus
   source          SubmissionSource @default(MINIAPP)
   draftCreatedAt  DateTime         @default(now()) @map("draft_created_at")

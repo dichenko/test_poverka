@@ -1,4 +1,5 @@
-﻿import { UserRole } from "@prisma/client";
+﻿import { SubmissionStatus } from "@prisma/client";
+import path from "path";
 import { Router } from "express";
 import { AppError } from "../../common/app-error";
 import { logger } from "../../common/logger";
@@ -6,11 +7,19 @@ import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
 import { authRateLimit } from "../../middlewares/rate-limit";
 import { logAuditEvent } from "../../services/audit.service";
-import { confirmSubmission } from "../submissions/submissions.service";
+import { getStorageProvider } from "../storage/storage.service";
+import {
+  cancelPendingSubmission,
+  getAwaitingPhotoSubmission,
+  markSubmissionAwaitingPhoto
+} from "../submissions/submissions.service";
 import { maxBotClient } from "./max-bot.client";
 import {
   knownUserUnexpectedMessage,
-  submissionConfirmedMessage,
+  photoRequiredMessage,
+  photoSavedAndConfirmedMessage,
+  profileMessage,
+  submissionCancelledMessage,
   unknownUserMessage
 } from "./bot.templates";
 
@@ -66,13 +75,21 @@ function extractEvent(body: any) {
     body?.message?.callback?.callback_id,
     body?.callback_id
   );
+  const messageId = pickFirstNonEmpty(
+    body?.message?.body?.mid,
+    body?.message?.mid,
+    body?.payload?.message?.body?.mid,
+    body?.payload?.message?.mid,
+    body?.mid
+  );
 
   return {
     type,
     userId,
     text,
     callbackPayload,
-    callbackId
+    callbackId,
+    messageId
   };
 }
 
@@ -93,6 +110,132 @@ function formatRemainingPackages(balance: number | null | undefined, userTarif: 
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
+function cancelKeyboard(submissionId: string) {
+  return [
+    {
+      type: "inline_keyboard",
+      payload: {
+        buttons: [
+          [
+            {
+              type: "callback",
+              text: "Отменить",
+              payload: `cancel_submission:${submissionId}`
+            }
+          ]
+        ]
+      }
+    }
+  ];
+}
+
+function collectAttachments(body: any): any[] {
+  const candidates = [
+    body?.attachments,
+    body?.message?.attachments,
+    body?.message?.body?.attachments,
+    body?.payload?.attachments,
+    body?.payload?.message?.attachments,
+    body?.payload?.message?.body?.attachments
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+  return [];
+}
+
+function extractUrlsDeep(node: any, out: string[] = []): string[] {
+  if (!node) {
+    return out;
+  }
+  if (typeof node === "string") {
+    if (/^https?:\/\//i.test(node)) {
+      out.push(node);
+    }
+    return out;
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      extractUrlsDeep(item, out);
+    }
+    return out;
+  }
+  if (typeof node === "object") {
+    for (const value of Object.values(node)) {
+      extractUrlsDeep(value, out);
+    }
+  }
+  return out;
+}
+
+function pickImageUrl(attachments: any[]): string {
+  const urls = extractUrlsDeep(attachments, []);
+  const preferred = urls.find((item) => /\.(jpg|jpeg|png|webp)(\?|$)/i.test(item));
+  if (preferred) {
+    return preferred;
+  }
+  return urls[0] || "";
+}
+
+async function downloadPhoto(url: string) {
+  const tryFetch = async (withAuth: boolean) =>
+    fetch(url, {
+      headers: withAuth ? { Authorization: env.MAX_BOT_TOKEN } : undefined
+    });
+
+  let response = await tryFetch(true);
+  if (!response.ok) {
+    response = await tryFetch(false);
+  }
+  if (!response.ok) {
+    throw new AppError("Failed to download photo.", 502, "PHOTO_DOWNLOAD_FAILED");
+  }
+
+  const contentType = String(response.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
+  if (!contentType.startsWith("image/")) {
+    throw new AppError("Attachment is not an image.", 400, "PHOTO_INVALID_MIME");
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const pathname = new URL(url).pathname;
+  const fromUrl = path.basename(pathname);
+  const extension = path.extname(fromUrl) || ".jpg";
+  const originalName = fromUrl && fromUrl.includes(".") ? fromUrl : `photo_${Date.now()}${extension}`;
+
+  return {
+    buffer,
+    mimeType: contentType,
+    originalName
+  };
+}
+
+async function getUserProfilePayload(userId: bigint) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { organization: true }
+  });
+  if (!user) {
+    return null;
+  }
+
+  const tarif = user.userTarif ?? user.organization?.userTarif;
+  const remainingPackages = formatRemainingPackages(user.organization?.balance, tarif);
+
+  return {
+    user,
+    remainingPackages,
+    text: profileMessage({
+      maxUserId: user.id.toString(),
+      fullName: user.fullName,
+      organizationName: user.organization?.name ?? null,
+      remainingPackages
+    })
+  };
+}
+
 router.post("/webhook/max", authRateLimit, async (req, res, next) => {
   try {
     const secret = req.header("X-Max-Bot-Api-Secret");
@@ -111,38 +254,98 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true, skipped: "WEBHOOK_USER_MISSING" });
     }
 
+    let numericUserId: bigint;
+    try {
+      numericUserId = BigInt(event.userId);
+    } catch {
+      await maxBotClient.sendMessage({
+        userId: event.userId,
+        text: unknownUserMessage(event.userId)
+      });
+      return res.json({ ok: true });
+    }
+
+    const profile = await getUserProfilePayload(numericUserId);
+    if (!profile) {
+      await maxBotClient.sendMessage({
+        userId: event.userId,
+        text: unknownUserMessage(event.userId)
+      });
+      return res.json({ ok: true });
+    }
+
     if (event.type === "message_callback") {
       if (event.callbackPayload.startsWith("confirm_submission:")) {
         const submissionId = event.callbackPayload.slice("confirm_submission:".length).trim();
         if (submissionId) {
-          const submission = await confirmSubmission({
+          const submission = await markSubmissionAwaitingPhoto({
             submissionId,
-            actorUserId: event.userId,
-            actorRole: UserRole.USER
-          });
-
-          await logAuditEvent({
-            actorUserId: event.userId,
-            action: "bot.submission.confirmed",
-            entityType: "SUBMISSION",
-            entityId: submission.id,
-            meta: { source: "message_callback" },
-            req
+            userId: event.userId
           });
 
           await maxBotClient.sendMessage({
             userId: event.userId,
-            text: submissionConfirmedMessage()
+            text: photoRequiredMessage(),
+            attachments: cancelKeyboard(submission.id)
+          });
+
+          await logAuditEvent({
+            actorUserId: event.userId,
+            action: "bot.submission.awaiting_photo",
+            entityType: "SUBMISSION",
+            entityId: submission.id,
+            req
           });
 
           if (event.callbackId) {
             await maxBotClient.answerCallback({
               callbackId: event.callbackId,
-              notification: "Заявка подтверждена"
+              notification: "Прикрепите фотографию счетчика"
             });
           }
 
-          return res.json({ ok: true, handled: "SUBMISSION_CONFIRMED" });
+          return res.json({ ok: true, handled: "SUBMISSION_AWAITING_PHOTO" });
+        }
+      }
+
+      if (event.callbackPayload.startsWith("cancel_submission:")) {
+        const submissionId = event.callbackPayload.slice("cancel_submission:".length).trim();
+        if (submissionId) {
+          const cancelled = await cancelPendingSubmission({
+            submissionId,
+            userId: event.userId
+          });
+
+          const storageProvider = getStorageProvider();
+          for (const storageKey of cancelled.storageKeys) {
+            try {
+              await storageProvider.deleteFile(storageKey);
+            } catch (error) {
+              logger.warn({ err: error, storageKey }, "Failed to delete file for canceled submission");
+            }
+          }
+
+          await logAuditEvent({
+            actorUserId: event.userId,
+            action: "bot.submission.cancelled",
+            entityType: "SUBMISSION",
+            entityId: submissionId,
+            req
+          });
+
+          await maxBotClient.sendMessage({
+            userId: event.userId,
+            text: `${submissionCancelledMessage()}\n\n${profile.text}`
+          });
+
+          if (event.callbackId) {
+            await maxBotClient.answerCallback({
+              callbackId: event.callbackId,
+              notification: "Заявка отменена"
+            });
+          }
+
+          return res.json({ ok: true, handled: "SUBMISSION_CANCELLED" });
         }
       }
 
@@ -159,45 +362,96 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true, skipped: "EVENT_TYPE_NOT_SUPPORTED" });
     }
 
-    let numericUserId: bigint;
-    try {
-      numericUserId = BigInt(event.userId);
-    } catch {
+    const awaiting = await getAwaitingPhotoSubmission(event.userId);
+    if (awaiting) {
+      let attachments = collectAttachments(req.body);
+      let photoUrl = pickImageUrl(attachments);
+
+      if (!photoUrl && event.messageId) {
+        const messageResult = await maxBotClient.getMessage(event.messageId);
+        if (messageResult.ok) {
+          attachments = collectAttachments(messageResult.message || {});
+          photoUrl = pickImageUrl(attachments);
+        }
+      }
+
+      if (!photoUrl) {
+        await maxBotClient.sendMessage({
+          userId: event.userId,
+          text: photoRequiredMessage(),
+          attachments: cancelKeyboard(awaiting.id)
+        });
+        return res.json({ ok: true, handled: "AWAITING_PHOTO_REMINDER" });
+      }
+
+      const photo = await downloadPhoto(photoUrl);
+      const storageProvider = getStorageProvider();
+      const stored = await storageProvider.saveFile({
+        buffer: photo.buffer,
+        originalName: photo.originalName,
+        mimeType: photo.mimeType
+      });
+
+      const file = await prisma.fileEntity.create({
+        data: {
+          ownerUserId: numericUserId,
+          submissionId: awaiting.id,
+          storageKey: stored.storageKey,
+          originalName: stored.originalName,
+          mimeType: stored.mimeType,
+          sizeBytes: stored.sizeBytes,
+          publicUrl: stored.publicUrl
+        }
+      });
+
+      await prisma.meterSubmission.update({
+        where: { id: awaiting.id },
+        data: {
+          status: SubmissionStatus.CONFIRMED,
+          confirmedAt: new Date(),
+          awaitingPhoto: false
+        }
+      });
+
+      await prisma.submissionStatusHistory.create({
+        data: {
+          submissionId: awaiting.id,
+          oldStatus: SubmissionStatus.PENDING_CONFIRMATION,
+          newStatus: SubmissionStatus.CONFIRMED,
+          changedByUserId: numericUserId,
+          reason: "Confirmed with photo in bot."
+        }
+      });
+
+      await logAuditEvent({
+        actorUserId: event.userId,
+        action: "bot.submission.photo.saved",
+        entityType: "FILE",
+        entityId: file.id,
+        meta: { submissionId: awaiting.id },
+        req
+      });
+
       await maxBotClient.sendMessage({
         userId: event.userId,
-        text: unknownUserMessage(event.userId)
+        text: `${photoSavedAndConfirmedMessage()}\n\n${profile.text}`
       });
-      return res.json({ ok: true });
+
+      return res.json({ ok: true, handled: "SUBMISSION_CONFIRMED_WITH_PHOTO" });
     }
-
-    const user = await prisma.user.findUnique({
-      where: { id: numericUserId },
-      include: { organization: true }
-    });
-
-    if (!user) {
-      await maxBotClient.sendMessage({
-        userId: event.userId,
-        text: unknownUserMessage(event.userId)
-      });
-      return res.json({ ok: true });
-    }
-
-    const tarif = user.userTarif ?? user.organization?.userTarif;
-    const remainingPackages = formatRemainingPackages(user.organization?.balance, tarif);
 
     await maxBotClient.sendMessage({
       userId: event.userId,
-      text: knownUserUnexpectedMessage(event.userId, remainingPackages)
+      text: knownUserUnexpectedMessage(event.userId, profile.remainingPackages)
     });
 
     await logAuditEvent({
-      actorUserId: user.id,
+      actorUserId: profile.user.id,
       action: "bot.unexpected.message.reply.sent",
       entityType: "SYSTEM",
       meta: {
         eventType: event.type,
-        remainingPackages
+        remainingPackages: profile.remainingPackages
       },
       req
     });

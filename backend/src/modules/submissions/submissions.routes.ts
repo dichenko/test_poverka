@@ -1,6 +1,5 @@
 ﻿import { Router } from "express";
 import { AppError } from "../../common/app-error";
-import { env } from "../../config/env";
 import { validate } from "../../common/validate";
 import { requireAuth } from "../../middlewares/auth";
 import { logAuditEvent } from "../../services/audit.service";
@@ -23,21 +22,7 @@ const router = Router();
 
 router.use(requireAuth);
 
-function getOpenAppCandidates() {
-  const candidates = new Set<string>();
-  if (env.MAX_WEB_APP) {
-    candidates.add(env.MAX_WEB_APP);
-  }
-  try {
-    candidates.add(new URL(env.MINIAPP_PUBLIC_URL).host);
-  } catch {
-    // ignore invalid URL, validated in env schema anyway
-  }
-  candidates.add(env.MINIAPP_PUBLIC_URL);
-  return [...candidates].filter(Boolean);
-}
-
-function buildReviewKeyboard(submissionId: string, editButton: Record<string, any>) {
+function reviewKeyboard(submissionId: string) {
   return [
     {
       type: "inline_keyboard",
@@ -49,47 +34,16 @@ function buildReviewKeyboard(submissionId: string, editButton: Record<string, an
               text: "Подтвердить",
               payload: `confirm_submission:${submissionId}`
             },
-            editButton
+            {
+              type: "callback",
+              text: "Отменить",
+              payload: `cancel_submission:${submissionId}`
+            }
           ]
         ]
       }
     }
   ];
-}
-
-async function sendReviewMessage(input: {
-  userId: string;
-  submissionId: string;
-  text: string;
-}) {
-  const openAppCandidates = getOpenAppCandidates();
-
-  for (const candidate of openAppCandidates) {
-    const result = await maxBotClient.sendMessage({
-      userId: input.userId,
-      text: input.text,
-      attachments: buildReviewKeyboard(input.submissionId, {
-        type: "open_app",
-        text: "Редактировать",
-        web_app: candidate
-      })
-    });
-    if (result.ok) {
-      return true;
-    }
-  }
-
-  const fallback = await maxBotClient.sendMessage({
-    userId: input.userId,
-    text: `${input.text}\n\nЕсли кнопка «Редактировать» не открывает miniapp, используйте ссылку:\n${env.MINIAPP_PUBLIC_URL}`,
-    attachments: buildReviewKeyboard(input.submissionId, {
-      type: "link",
-      text: "Редактировать",
-      url: env.MINIAPP_PUBLIC_URL
-    })
-  });
-
-  return fallback.ok;
 }
 
 router.get("/submissions/equipment-types", async (_req, res, next) => {
@@ -163,9 +117,8 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
       req
     });
 
-    const sent = await sendReviewMessage({
+    const sent = await maxBotClient.sendMessage({
       userId: req.auth!.userId,
-      submissionId: submission.id,
       text: submissionReviewMessage({
         address: submission.address,
         phone: submission.phone,
@@ -174,10 +127,11 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
         factoryNumber: submission.meterNumber,
         productionYear: submission.productionYear,
         reading: submission.currentValue.toString()
-      })
+      }),
+      attachments: reviewKeyboard(submission.id)
     });
 
-    if (!sent) {
+    if (!sent.ok) {
       throw new AppError("Failed to send confirmation message to MAX.", 502, "MAX_MESSAGE_SEND_FAILED");
     }
 

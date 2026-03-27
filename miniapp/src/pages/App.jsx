@@ -434,7 +434,8 @@ export default function App() {
       return (
         <StatusScreen
           title="Вы не в базе"
-          description={`Вы не в базе, ваш MAX ID ${maxUserId || "не определен"}☎ Связь с админом @HelpMetr
+          description={`Вы не в базе, ваш MAX ID ${maxUserId || "не определен"}
+☎ Связь с админом @HelpMetr
 📞  Связь с админом +79370332222`}
         />
       );

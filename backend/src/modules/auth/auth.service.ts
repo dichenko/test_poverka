@@ -65,9 +65,6 @@ export async function createAuthSession(input: {
   if (user.role === UserRole.USER && !user.organizationId) {
     throw new AppError("User has no organization assigned.", 403, "USER_ORG_REQUIRED");
   }
-  if (user.organization && !user.organization.isActive) {
-    throw new AppError("Organization is inactive.", 403, "ORG_INACTIVE");
-  }
 
   const patchedFullName = buildFullName(validated.firstName, validated.lastName);
   if (validated.firstName && patchedFullName && patchedFullName !== user.fullName) {
@@ -134,7 +131,7 @@ export async function createAuthSession(input: {
       fullName: user.fullName,
       username: user.username,
       role: user.role,
-      organizationId: user.organizationId,
+      organizationId: user.organizationId?.toString() ?? null,
       organizationName: user.organization?.name ?? null,
       isActive: user.isActive
     }
@@ -198,7 +195,7 @@ export async function rotateRefreshToken(req: Request, res: Response) {
       maxUserId: session.user.maxUserId,
       fullName: session.user.fullName,
       role: session.user.role,
-      organizationId: session.user.organizationId,
+      organizationId: session.user.organizationId?.toString() ?? null,
       isActive: session.user.isActive
     }
   };

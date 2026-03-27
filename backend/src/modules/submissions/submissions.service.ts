@@ -26,9 +26,6 @@ export async function createDraftSubmission(input: {
   if (!user.organizationId) {
     throw new AppError("Organization is required for submission.", 403, "ORG_REQUIRED");
   }
-  if (!user.organization?.isActive) {
-    throw new AppError("Organization is inactive.", 403, "ORG_INACTIVE");
-  }
 
   const currentValue = parseMeterValue(input.currentValue);
 

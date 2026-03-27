@@ -35,14 +35,12 @@ enum AuditEntityType {
 }
 
 model Organization {
-  id        String   @id @default(cuid())
-  inn       String   @unique
-  name      String
-  isActive  Boolean  @default(true) @map("is_active")
-  balance   Decimal? @db.Decimal(14, 2)
-  submissionLimit Int? @map("submission_limit")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                BigInt  @id @default(autoincrement()) @map("org_id")
+  name              String  @map("org_name")
+  email             String? @unique @map("org_email")
+  balance           Float?  @db.DoublePrecision
+  balanceStartOfDay Float?  @map("balance_start_of_day") @db.DoublePrecision
+  userTarif         Float?  @map("user_tarif") @db.DoublePrecision
 
   users       User[]
   submissions MeterSubmission[]
@@ -59,7 +57,7 @@ model User {
   username       String?
   phone          String?
   role           UserRole  @default(USER)
-  organizationId String?   @map("organization_id")
+  organizationId BigInt?   @map("organization_id")
   isActive       Boolean   @default(true) @map("is_active")
   lastLoginAt    DateTime? @map("last_login_at")
   createdAt      DateTime  @default(now()) @map("created_at")
@@ -80,7 +78,7 @@ model User {
 model MeterSubmission {
   id             String           @id @default(cuid())
   userId         String           @map("user_id")
-  organizationId String           @map("organization_id")
+  organizationId BigInt           @map("organization_id")
   meterNumber    String           @map("meter_number")
   currentValue   Decimal          @db.Decimal(14, 3) @map("current_value")
   status         SubmissionStatus

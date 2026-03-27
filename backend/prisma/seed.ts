@@ -1,22 +1,22 @@
-import { PrismaClient, SubmissionSource, SubmissionStatus, UserRole } from "@prisma/client";
+﻿import { PrismaClient, SubmissionSource, SubmissionStatus, UserRole } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 async function main() {
   const org = await prisma.organization.upsert({
-    where: { inn: "7700000001" },
+    where: { email: "org@poverka-bot.ru" },
     update: {
-      name: "ООО Поверка Тест",
-      isActive: true,
-      balance: "50000.00",
-      submissionLimit: 1000
+      name: "OOO Poverka Test",
+      balance: 50000,
+      balanceStartOfDay: 12000,
+      userTarif: 1250
     },
     create: {
-      inn: "7700000001",
-      name: "ООО Поверка Тест",
-      isActive: true,
-      balance: "50000.00",
-      submissionLimit: 1000
+      name: "OOO Poverka Test",
+      email: "org@poverka-bot.ru",
+      balance: 50000,
+      balanceStartOfDay: 12000,
+      userTarif: 1250
     }
   });
 
@@ -45,9 +45,9 @@ async function main() {
   const user1 = await prisma.user.upsert({
     where: { maxUserId: "1001" },
     update: {
-      firstName: "Иван",
-      lastName: "Петров",
-      fullName: "Иван Петров",
+      firstName: "Ivan",
+      lastName: "Petrov",
+      fullName: "Ivan Petrov",
       username: "ivan.petrov",
       role: UserRole.USER,
       organizationId: org.id,
@@ -55,9 +55,9 @@ async function main() {
     },
     create: {
       maxUserId: "1001",
-      firstName: "Иван",
-      lastName: "Петров",
-      fullName: "Иван Петров",
+      firstName: "Ivan",
+      lastName: "Petrov",
+      fullName: "Ivan Petrov",
       username: "ivan.petrov",
       role: UserRole.USER,
       organizationId: org.id,
@@ -68,9 +68,9 @@ async function main() {
   await prisma.user.upsert({
     where: { maxUserId: "1002" },
     update: {
-      firstName: "Мария",
-      lastName: "Сидорова",
-      fullName: "Мария Сидорова",
+      firstName: "Maria",
+      lastName: "Sidorova",
+      fullName: "Maria Sidorova",
       username: "maria.sidorova",
       role: UserRole.USER,
       organizationId: org.id,
@@ -78,9 +78,9 @@ async function main() {
     },
     create: {
       maxUserId: "1002",
-      firstName: "Мария",
-      lastName: "Сидорова",
-      fullName: "Мария Сидорова",
+      firstName: "Maria",
+      lastName: "Sidorova",
+      fullName: "Maria Sidorova",
       username: "maria.sidorova",
       role: UserRole.USER,
       organizationId: org.id,

@@ -6,15 +6,13 @@ CREATE TYPE "AuditEntityType" AS ENUM ('USER', 'ORGANIZATION', 'SUBMISSION', 'AU
 
 -- Create tables
 CREATE TABLE "organizations" (
-  "id" TEXT NOT NULL,
-  "inn" TEXT NOT NULL,
-  "name" TEXT NOT NULL,
-  "is_active" BOOLEAN NOT NULL DEFAULT true,
-  "balance" DECIMAL(14,2),
-  "submission_limit" INTEGER,
-  "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updated_at" TIMESTAMP(3) NOT NULL,
-  CONSTRAINT "organizations_pkey" PRIMARY KEY ("id")
+  "org_id" BIGSERIAL NOT NULL,
+  "org_name" TEXT NOT NULL,
+  "org_email" TEXT,
+  "balance" DOUBLE PRECISION,
+  "balance_start_of_day" DOUBLE PRECISION,
+  "user_tarif" DOUBLE PRECISION,
+  CONSTRAINT "organizations_pkey" PRIMARY KEY ("org_id")
 );
 
 CREATE TABLE "users" (
@@ -26,7 +24,7 @@ CREATE TABLE "users" (
   "username" TEXT,
   "phone" TEXT,
   "role" "UserRole" NOT NULL DEFAULT 'USER',
-  "organization_id" TEXT,
+  "organization_id" BIGINT,
   "is_active" BOOLEAN NOT NULL DEFAULT true,
   "last_login_at" TIMESTAMP(3),
   "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -37,7 +35,7 @@ CREATE TABLE "users" (
 CREATE TABLE "meter_submissions" (
   "id" TEXT NOT NULL,
   "user_id" TEXT NOT NULL,
-  "organization_id" TEXT NOT NULL,
+  "organization_id" BIGINT NOT NULL,
   "meter_number" TEXT NOT NULL,
   "current_value" DECIMAL(14,3) NOT NULL,
   "status" "SubmissionStatus" NOT NULL,
@@ -111,7 +109,7 @@ CREATE TABLE "files" (
 );
 
 -- Unique indexes
-CREATE UNIQUE INDEX "organizations_inn_key" ON "organizations"("inn");
+CREATE UNIQUE INDEX "organizations_org_email_key" ON "organizations"("org_email");
 CREATE UNIQUE INDEX "users_max_user_id_key" ON "users"("max_user_id");
 CREATE UNIQUE INDEX "auth_refresh_tokens_token_hash_key" ON "auth_refresh_tokens"("token_hash");
 CREATE UNIQUE INDEX "init_data_replays_replay_key_key" ON "init_data_replays"("replay_key");
@@ -135,7 +133,7 @@ CREATE INDEX "files_submission_id_idx" ON "files"("submission_id");
 -- Foreign keys
 ALTER TABLE "users"
   ADD CONSTRAINT "users_organization_id_fkey"
-  FOREIGN KEY ("organization_id") REFERENCES "organizations"("id")
+  FOREIGN KEY ("organization_id") REFERENCES "organizations"("org_id")
   ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "meter_submissions"
@@ -145,7 +143,7 @@ ALTER TABLE "meter_submissions"
 
 ALTER TABLE "meter_submissions"
   ADD CONSTRAINT "meter_submissions_organization_id_fkey"
-  FOREIGN KEY ("organization_id") REFERENCES "organizations"("id")
+  FOREIGN KEY ("organization_id") REFERENCES "organizations"("org_id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
 
 ALTER TABLE "submission_status_history"

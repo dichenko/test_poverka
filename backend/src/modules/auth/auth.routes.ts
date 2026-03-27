@@ -64,7 +64,7 @@ router.get("/auth/me", requireAuth, async (req, res, next) => {
         fullName: user.fullName,
         role: user.role,
         isActive: user.isActive,
-        organizationId: user.organizationId,
+        organizationId: user.organizationId?.toString() ?? null,
         organizationName: user.organization?.name ?? null
       }
     });

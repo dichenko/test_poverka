@@ -23,9 +23,19 @@ router.use(requireAuth, requireRole([UserRole.ADMIN]));
 router.get("/admin/organizations", async (_req, res, next) => {
   try {
     const organizations = await prisma.organization.findMany({
-      orderBy: [{ isActive: "desc" }, { name: "asc" }]
+      orderBy: { name: "asc" }
     });
-    res.json({ ok: true, organizations });
+    res.json({
+      ok: true,
+      organizations: organizations.map((org) => ({
+        id: org.id.toString(),
+        name: org.name,
+        email: org.email,
+        balance: org.balance,
+        balanceStartOfDay: org.balanceStartOfDay,
+        userTarif: org.userTarif
+      }))
+    });
   } catch (error) {
     next(error);
   }
@@ -43,9 +53,10 @@ router.patch(
         where: { id: params.id },
         data: {
           name: body.name,
-          isActive: body.isActive,
+          email: body.email ?? undefined,
           balance: body.balance ?? undefined,
-          submissionLimit: body.submissionLimit ?? undefined
+          balanceStartOfDay: body.balanceStartOfDay ?? undefined,
+          userTarif: body.userTarif ?? undefined
         }
       });
 
@@ -53,12 +64,22 @@ router.patch(
         actorUserId: req.auth!.userId,
         action: "admin.organization.updated",
         entityType: "ORGANIZATION",
-        entityId: organization.id,
+        entityId: organization.id.toString(),
         meta: body,
         req
       });
 
-      return res.json({ ok: true, organization });
+      return res.json({
+        ok: true,
+        organization: {
+          id: organization.id.toString(),
+          name: organization.name,
+          email: organization.email,
+          balance: organization.balance,
+          balanceStartOfDay: organization.balanceStartOfDay,
+          userTarif: organization.userTarif
+        }
+      });
     } catch (error) {
       return next(error);
     }
@@ -100,7 +121,7 @@ router.get("/admin/users", validate(adminListUsersQuerySchema, "query"), async (
         phone: user.phone,
         role: user.role,
         isActive: user.isActive,
-        organizationId: user.organizationId,
+        organizationId: user.organizationId?.toString() ?? null,
         organizationName: user.organization?.name ?? null,
         createdAt: user.createdAt
       }))
@@ -132,11 +153,17 @@ router.post("/admin/users", validate(adminCreateUserSchema), async (req, res, ne
       action: "admin.user.created",
       entityType: "USER",
       entityId: user.id,
-      meta: { role: user.role, organizationId: user.organizationId },
+      meta: { role: user.role, organizationId: user.organizationId?.toString() ?? null },
       req
     });
 
-    res.status(201).json({ ok: true, user });
+    res.status(201).json({
+      ok: true,
+      user: {
+        ...user,
+        organizationId: user.organizationId?.toString() ?? null
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -183,11 +210,20 @@ router.patch(
         action: "admin.user.updated",
         entityType: "USER",
         entityId: user.id,
-        meta: req.body,
+        meta: {
+          ...req.body,
+          organizationId: req.body.organizationId?.toString() ?? null
+        },
         req
       });
 
-      return res.json({ ok: true, user });
+      return res.json({
+        ok: true,
+        user: {
+          ...user,
+          organizationId: user.organizationId?.toString() ?? null
+        }
+      });
     } catch (error) {
       return next(error);
     }
@@ -234,9 +270,9 @@ router.get("/admin/submissions", validate(adminListSubmissionsQuerySchema, "quer
           maxUserId: item.user.maxUserId
         },
         organization: {
-          id: item.organization.id,
+          id: item.organization.id.toString(),
           name: item.organization.name,
-          inn: item.organization.inn
+          email: item.organization.email
         }
       }))
     });

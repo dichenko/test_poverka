@@ -3,7 +3,7 @@ import { z } from "zod";
 
 export const adminListUsersQuerySchema = z.object({
   role: z.nativeEnum(UserRole).optional(),
-  organizationId: z.string().cuid().optional(),
+  organizationId: z.coerce.bigint().optional(),
   isActive: z
     .enum(["true", "false"])
     .optional()
@@ -19,7 +19,7 @@ export const adminCreateUserSchema = z.object({
   username: z.string().trim().optional().nullable(),
   phone: z.string().trim().optional().nullable(),
   role: z.nativeEnum(UserRole),
-  organizationId: z.string().cuid().optional().nullable(),
+  organizationId: z.coerce.bigint().optional().nullable(),
   isActive: z.boolean().default(true)
 });
 
@@ -32,7 +32,7 @@ export const adminUserParamsSchema = z.object({
 });
 
 export const adminListSubmissionsQuerySchema = z.object({
-  organizationId: z.string().cuid().optional(),
+  organizationId: z.coerce.bigint().optional(),
   userId: z.string().cuid().optional(),
   status: z.enum(["DRAFT", "PENDING_CONFIRMATION", "CONFIRMED", "REJECTED"]).optional(),
   from: z.string().datetime().optional(),
@@ -51,12 +51,13 @@ export const adminSubmissionParamsSchema = z.object({
 });
 
 export const adminOrgParamsSchema = z.object({
-  id: z.string().cuid()
+  id: z.coerce.bigint()
 });
 
 export const adminUpdateOrganizationSchema = z.object({
   name: z.string().trim().min(2).optional(),
-  isActive: z.boolean().optional(),
+  email: z.string().email().optional().nullable(),
   balance: z.number().nonnegative().nullable().optional(),
-  submissionLimit: z.number().int().positive().nullable().optional()
+  balanceStartOfDay: z.number().nonnegative().nullable().optional(),
+  userTarif: z.number().nonnegative().nullable().optional()
 });

@@ -228,6 +228,60 @@ export async function cancelPendingSubmission(input: { submissionId: string; use
   };
 }
 
+export async function cancelAllUnfinishedSubmissions(input: { userId: string }) {
+  const userId = parseUserId(input.userId);
+  const submissions = await prisma.meterSubmission.findMany({
+    where: {
+      userId,
+      status: {
+        in: [SubmissionStatus.DRAFT, SubmissionStatus.PENDING_CONFIRMATION]
+      }
+    },
+    include: {
+      files: true
+    }
+  });
+
+  if (!submissions.length) {
+    return {
+      cancelledCount: 0,
+      storageKeys: []
+    };
+  }
+
+  const submissionIds = submissions.map((item) => item.id);
+  const storageKeys = submissions.flatMap((item) => item.files.map((file) => file.storageKey));
+
+  await prisma.$transaction([
+    prisma.submissionStatusHistory.deleteMany({
+      where: {
+        submissionId: {
+          in: submissionIds
+        }
+      }
+    }),
+    prisma.fileEntity.deleteMany({
+      where: {
+        submissionId: {
+          in: submissionIds
+        }
+      }
+    }),
+    prisma.meterSubmission.deleteMany({
+      where: {
+        id: {
+          in: submissionIds
+        }
+      }
+    })
+  ]);
+
+  return {
+    cancelledCount: submissions.length,
+    storageKeys
+  };
+}
+
 export async function listMySubmissions(input: {
   userId: string;
   limit: number;

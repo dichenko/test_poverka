@@ -9,6 +9,7 @@ import { authRateLimit } from "../../middlewares/rate-limit";
 import { logAuditEvent } from "../../services/audit.service";
 import { getStorageProvider } from "../storage/storage.service";
 import {
+  cancelAllUnfinishedSubmissions,
   cancelPendingSubmission,
   getLatestPendingSubmission,
   getAwaitingPhotoSubmission,
@@ -355,6 +356,11 @@ async function resolveActionSubmissionId(userId: string, explicitSubmissionId: s
   return pending?.id ?? "";
 }
 
+function isStartCommand(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return /^\/start(?:@\w+)?(?:\s|$)/i.test(normalized);
+}
+
 async function handleConfirmAction(input: {
   submissionId: string;
   userId: string;
@@ -428,6 +434,41 @@ async function handleCancelAction(input: {
       notification: "Заявка отменена"
     });
   }
+}
+
+async function handleStartCommand(input: { userId: string; req: any; profileText: string }) {
+  const cancelled = await cancelAllUnfinishedSubmissions({
+    userId: input.userId
+  });
+
+  const storageProvider = getStorageProvider();
+  for (const storageKey of cancelled.storageKeys) {
+    try {
+      await storageProvider.deleteFile(storageKey);
+    } catch (error) {
+      logger.warn({ err: error, storageKey }, "Failed to delete file while processing /start");
+    }
+  }
+
+  await logAuditEvent({
+    actorUserId: input.userId,
+    action: "bot.start.reset.submissions",
+    entityType: "SYSTEM",
+    meta: {
+      cancelledCount: cancelled.cancelledCount
+    },
+    req: input.req
+  });
+
+  const prefix =
+    cancelled.cancelledCount > 0
+      ? `Команда /start выполнена. Отменено незавершенных заявок: ${cancelled.cancelledCount}.`
+      : "Команда /start выполнена. Незавершенных заявок не найдено.";
+
+  await maxBotClient.sendMessage({
+    userId: input.userId,
+    text: `${prefix}\n\n${input.profileText}`
+  });
 }
 
 router.post("/webhook/max", authRateLimit, async (req, res, next) => {
@@ -522,6 +563,15 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
 
     if (event.type !== "message_created") {
       return res.json({ ok: true, skipped: "EVENT_TYPE_NOT_SUPPORTED" });
+    }
+
+    if (isStartCommand(event.text)) {
+      await handleStartCommand({
+        userId: event.userId,
+        req,
+        profileText: profile.text
+      });
+      return res.json({ ok: true, handled: "START_RESET" });
     }
 
     const messageAction = resolveActionFromEvent(event, req.body);

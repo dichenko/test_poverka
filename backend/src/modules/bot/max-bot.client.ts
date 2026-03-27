@@ -44,9 +44,12 @@ export class MaxBotClient {
           { status: response.status, body: responseBody, userId: payload.userId, endpoint: endpoint.toString() },
           "Failed to send MAX message"
         );
+        return false;
       }
+      return true;
     } catch (error) {
       logger.error({ err: error, userId: payload.userId, endpoint: endpoint.toString() }, "MAX sendMessage failed");
+      return false;
     }
   }
 

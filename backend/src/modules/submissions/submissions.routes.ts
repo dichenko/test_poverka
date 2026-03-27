@@ -1,5 +1,5 @@
 ﻿import { Router } from "express";
-import { env } from "../../config/env";
+import { AppError } from "../../common/app-error";
 import { validate } from "../../common/validate";
 import { requireAuth } from "../../middlewares/auth";
 import { logAuditEvent } from "../../services/audit.service";
@@ -93,7 +93,7 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
       req
     });
 
-    await maxBotClient.sendMessage({
+    const sent = await maxBotClient.sendMessage({
       userId: req.auth!.userId,
       text: submissionReviewMessage({
         address: submission.address,
@@ -117,8 +117,7 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
                 },
                 {
                   type: "open_app",
-                  text: "Редактировать",
-                  web_app: env.MINIAPP_PUBLIC_URL
+                  text: "Редактировать"
                 }
               ]
             ]
@@ -126,6 +125,9 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
         }
       ]
     });
+    if (!sent) {
+      throw new AppError("Failed to send confirmation message to MAX.", 502, "MAX_MESSAGE_SEND_FAILED");
+    }
 
     return res.status(201).json({
       ok: true,

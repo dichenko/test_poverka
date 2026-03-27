@@ -112,7 +112,9 @@ export async function createAuthSession(input: {
       username: null,
       role: user.role,
       organizationId: user.organizationId?.toString() ?? null,
-      organizationName: user.organization?.name ?? null
+      organizationName: user.organization?.name ?? null,
+      organizationBalance: user.organization?.balance ?? null,
+      organizationTarif: user.organization?.userTarif ?? null
     }
   };
 }

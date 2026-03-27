@@ -9,7 +9,7 @@ import {
   listUsers,
   updateUser
 } from "../api/admin";
-import { confirmSubmission, createDraftSubmission, listEquipmentTypes, listMySubmissions } from "../api/submissions";
+import { confirmSubmission, createDraftSubmission, listEquipmentTypes } from "../api/submissions";
 import { useAuth } from "../hooks/useAuth";
 
 const submissionSchema = z.object({
@@ -39,6 +39,19 @@ function StatusScreen({ title, description, code }) {
   );
 }
 
+function formatRemainingPackages(balance, tarif) {
+  const b = Number(balance);
+  const t = Number(tarif);
+  if (!Number.isFinite(b) || !Number.isFinite(t) || t <= 0) {
+    return "-";
+  }
+  const value = b / t;
+  if (!Number.isFinite(value) || value < 0) {
+    return "-";
+  }
+  return value.toFixed(1).replace(/\.0$/, "");
+}
+
 function UserPanel({ accessToken }) {
   const [form, setForm] = useState({
     address: "",
@@ -52,17 +65,11 @@ function UserPanel({ accessToken }) {
   const [equipmentTypes, setEquipmentTypes] = useState([]);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(null);
-  const [recent, setRecent] = useState([]);
   const [loading, setLoading] = useState(false);
 
   async function loadEquipment() {
     const data = await listEquipmentTypes(accessToken);
     setEquipmentTypes(data.equipmentTypes || []);
-  }
-
-  async function loadRecent() {
-    const data = await listMySubmissions(accessToken);
-    setRecent(data.submissions || []);
   }
 
   async function submitDraft(event) {
@@ -81,7 +88,6 @@ function UserPanel({ accessToken }) {
       };
       const response = await createDraftSubmission(payload, accessToken);
       setPending(response.submission);
-      await loadRecent();
     } catch (err) {
       setError(err.message || "Не удалось создать черновик");
     } finally {
@@ -106,7 +112,6 @@ function UserPanel({ accessToken }) {
         productionYear: "",
         reading: ""
       });
-      await loadRecent();
     } catch (err) {
       setError(err.message || "Не удалось подтвердить заявку");
     } finally {
@@ -116,7 +121,6 @@ function UserPanel({ accessToken }) {
 
   useEffect(() => {
     void loadEquipment();
-    void loadRecent();
   }, []);
 
   return (
@@ -205,6 +209,10 @@ function UserPanel({ accessToken }) {
             <label htmlFor="reading">Показания</label>
             <input
               id="reading"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.001"
               value={form.reading}
               onChange={(event) => setForm((prev) => ({ ...prev, reading: event.target.value }))}
               placeholder="Например 88.5"
@@ -234,36 +242,6 @@ function UserPanel({ accessToken }) {
         </div>
       ) : null}
 
-      <h3>Мои последние заявки</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Дата</th>
-            <th>Адрес</th>
-            <th>Тип</th>
-            <th>Номер</th>
-            <th>Показания</th>
-            <th>Статус</th>
-          </tr>
-        </thead>
-        <tbody>
-          {recent.map((item) => (
-            <tr key={item.id}>
-              <td>{new Date(item.createdAt).toLocaleString()}</td>
-              <td>{item.address || "-"}</td>
-              <td>{item.equipmentTypeName || "-"}</td>
-              <td>{item.factoryNumber || "-"}</td>
-              <td>{item.reading}</td>
-              <td>{item.status}</td>
-            </tr>
-          ))}
-          {!recent.length ? (
-            <tr>
-              <td colSpan={6}>Заявок пока нет</td>
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -545,6 +523,7 @@ function AdminPanel({ accessToken }) {
 
 export default function App() {
   const { loading, accessToken, user, maxUserId, error, errorCode } = useAuth();
+  const packagesCount = formatRemainingPackages(user?.organizationBalance, user?.organizationTarif);
 
   if (loading) {
     return <StatusScreen title="Загрузка" description="Выполняется авторизация через MAX WebApp..." />;
@@ -576,11 +555,9 @@ export default function App() {
   return (
     <div className="page">
       <div className="card">
-        <h2>{user.fullName}</h2>
-        <p>
-          Роль: <b>{user.role}</b>
-          {user.organizationName ? `, организация: ${user.organizationName}` : ""}
-        </p>
+        <h2>{user.organizationName || "Организация не указана"}</h2>
+        <p>Пакеты: {packagesCount}</p>
+        <p>{user.fullName}</p>
         {user.role === "ADMIN" ? <AdminPanel accessToken={accessToken} /> : <UserPanel accessToken={accessToken} />}
       </div>
     </div>

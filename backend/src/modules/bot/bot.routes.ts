@@ -1,28 +1,21 @@
-﻿import { SubmissionStatus } from "@prisma/client";
-import { Router } from "express";
+﻿import { Router } from "express";
 import { AppError } from "../../common/app-error";
 import { logger } from "../../common/logger";
 import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
 import { authRateLimit } from "../../middlewares/rate-limit";
 import { logAuditEvent } from "../../services/audit.service";
-import { confirmSubmission } from "../submissions/submissions.service";
 import { maxBotClient } from "./max-bot.client";
-import {
-  knownUserUnexpectedMessage,
-  noPendingSubmissionMessage,
-  submissionConfirmedMessage,
-  unknownUserMessage
-} from "./bot.templates";
+import { knownUserUnexpectedMessage, unknownUserMessage } from "./bot.templates";
 
 const router = Router();
 const MAX_LOG_TEXT_LIMIT = 500;
 
-function normalizeText(input: unknown): string {
-  return String(input ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
+interface KnownBotUserRow {
+  userId: bigint;
+  orgBalance: number | null;
+  userTarif: number | null;
+  orgUserTarif: number | null;
 }
 
 function pickFirstNonEmpty(...candidates: unknown[]): string {
@@ -68,26 +61,43 @@ function extractEvent(body: any) {
   };
 }
 
-function isConfirmCommand(text: string) {
-  const normalized = normalizeText(text);
-  return normalized === "подтверждаю" || normalized === "confirm";
-}
-
 function formatIncomingLog(userId: string, text: string) {
   const now = new Date().toISOString();
   const safeText = text.replace(/\s+/g, " ").trim().slice(0, MAX_LOG_TEXT_LIMIT);
   return `${now} - ${userId || "-"} - ${safeText || "-"}`;
 }
 
-function formatRemainingPackages(balance: number | null | undefined, userTarif: number | null | undefined) {
-  if (balance == null || userTarif == null || userTarif <= 0) {
+function formatRemainingPackages(balance: number | null, userTarif: number | null, orgUserTarif: number | null) {
+  const tarif = userTarif ?? orgUserTarif;
+  if (balance == null || tarif == null || tarif <= 0) {
     return "0";
   }
-  const value = balance / userTarif;
+  const value = balance / tarif;
   if (!Number.isFinite(value) || value < 0) {
     return "0";
   }
   return value.toFixed(1).replace(/\.0$/, "");
+}
+
+async function findKnownUserByMaxUserId(maxUserId: string): Promise<KnownBotUserRow | null> {
+  try {
+    const numericUserId = BigInt(maxUserId);
+    const rows = await prisma.$queryRaw<KnownBotUserRow[]>`
+      SELECT
+        u.user_id AS "userId",
+        o.balance AS "orgBalance",
+        u.user_tarif AS "userTarif",
+        o.user_tarif AS "orgUserTarif"
+      FROM users u
+      LEFT JOIN organizations o ON o.org_id = u.org_id
+      WHERE u.user_id = ${numericUserId}
+      LIMIT 1
+    `;
+
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 router.post("/webhook/max", authRateLimit, async (req, res, next) => {
@@ -108,11 +118,8 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true, skipped: "WEBHOOK_USER_MISSING" });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { maxUserId: event.userId },
-      include: { organization: true }
-    });
-    if (!user || !user.isActive) {
+    const knownUser = await findKnownUserByMaxUserId(event.userId);
+    if (!knownUser) {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: unknownUserMessage(event.userId)
@@ -120,64 +127,25 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true });
     }
 
-    if (event.type !== "message_created" && event.type !== "bot_started") {
-      return res.json({ ok: true, skipped: "EVENT_TYPE_IGNORED" });
-    }
-
-    if (!isConfirmCommand(event.text)) {
-      const remainingPackages = formatRemainingPackages(user.organization?.balance, user.organization?.userTarif);
-
-      await maxBotClient.sendMessage({
-        userId: event.userId,
-        text: knownUserUnexpectedMessage(event.userId, remainingPackages)
-      });
-
-      await logAuditEvent({
-        actorUserId: user.id,
-        action: "bot.unexpected.message.reply.sent",
-        entityType: "SYSTEM",
-        meta: {
-          eventType: event.type,
-          remainingPackages
-        },
-        req
-      });
-
-      return res.json({ ok: true });
-    }
-
-    const pending = await prisma.meterSubmission.findFirst({
-      where: {
-        userId: user.id,
-        status: SubmissionStatus.PENDING_CONFIRMATION
-      },
-      orderBy: { createdAt: "desc" }
-    });
-
-    if (!pending) {
-      await maxBotClient.sendMessage({
-        userId: event.userId,
-        text: noPendingSubmissionMessage()
-      });
-      return res.json({ ok: true });
-    }
-
-    await confirmSubmission({
-      submissionId: pending.id,
-      actorUserId: user.id,
-      actorRole: user.role
-    });
+    const remainingPackages = formatRemainingPackages(
+      knownUser.orgBalance,
+      knownUser.userTarif,
+      knownUser.orgUserTarif
+    );
 
     await maxBotClient.sendMessage({
       userId: event.userId,
-      text: submissionConfirmedMessage()
+      text: knownUserUnexpectedMessage(event.userId, remainingPackages)
     });
 
     await logAuditEvent({
-      actorUserId: user.id,
-      action: "bot.submission.confirmed",
-      entityType: "SUBMISSION",
-      entityId: pending.id,
+      actorUserId: knownUser.userId.toString(),
+      action: "bot.unexpected.message.reply.sent",
+      entityType: "SYSTEM",
+      meta: {
+        eventType: event.type,
+        remainingPackages
+      },
       req
     });
 

@@ -19,7 +19,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   pgadmin:
-    image: dpage/pgadmin4:8
+    image: dpage/pgadmin4:9.13
     container_name: poverka-bot-max-pgadmin
     restart: unless-stopped
     depends_on:

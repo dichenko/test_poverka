@@ -6,13 +6,12 @@ CREATE TYPE "AuditEntityType" AS ENUM ('USER', 'ORGANIZATION', 'SUBMISSION', 'AU
 
 -- Create tables
 CREATE TABLE "organizations" (
-  "org_id" BIGSERIAL NOT NULL,
+  "org_id" BIGSERIAL PRIMARY KEY,
   "org_name" TEXT NOT NULL,
   "org_email" TEXT,
   "balance" DOUBLE PRECISION,
   "balance_start_of_day" DOUBLE PRECISION,
-  "user_tarif" DOUBLE PRECISION,
-  CONSTRAINT "organizations_pkey" PRIMARY KEY ("org_id")
+  "user_tarif" DOUBLE PRECISION
 );
 
 CREATE TABLE "users" (

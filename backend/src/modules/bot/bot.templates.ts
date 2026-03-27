@@ -3,7 +3,7 @@ export function miniappOpenMessage(fullName: string) {
 }
 
 export function unknownUserMessage(maxUserId: string) {
-  return `Доступ не предоставлен. Ваш MAX ID: ${maxUserId}. Обратитесь к администратору.`;
+  return `Вас нет в базе. Ваш MaxID: ${maxUserId}`;
 }
 
 export function noPendingSubmissionMessage() {

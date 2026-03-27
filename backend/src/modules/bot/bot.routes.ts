@@ -1,12 +1,18 @@
-﻿import { Router } from "express";
+﻿import { UserRole } from "@prisma/client";
+import { Router } from "express";
 import { AppError } from "../../common/app-error";
 import { logger } from "../../common/logger";
 import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
 import { authRateLimit } from "../../middlewares/rate-limit";
 import { logAuditEvent } from "../../services/audit.service";
+import { confirmSubmission } from "../submissions/submissions.service";
 import { maxBotClient } from "./max-bot.client";
-import { knownUserUnexpectedMessage, unknownUserMessage } from "./bot.templates";
+import {
+  knownUserUnexpectedMessage,
+  submissionConfirmedMessage,
+  unknownUserMessage
+} from "./bot.templates";
 
 const router = Router();
 const MAX_LOG_TEXT_LIMIT = 500;
@@ -36,7 +42,9 @@ function extractEvent(body: any) {
     body?.message?.user_id,
     body?.payload?.user_id,
     body?.payload?.sender?.id,
-    body?.payload?.sender?.user_id
+    body?.payload?.sender?.user_id,
+    body?.callback?.user_id,
+    body?.callback?.sender?.user_id
   );
   const text = pickFirstNonEmpty(
     body?.text,
@@ -46,11 +54,25 @@ function extractEvent(body: any) {
     body?.payload?.text,
     body?.payload?.message?.text
   );
+  const callbackPayload = pickFirstNonEmpty(
+    body?.callback?.payload,
+    body?.payload?.callback?.payload,
+    body?.message?.callback?.payload,
+    body?.payload
+  );
+  const callbackId = pickFirstNonEmpty(
+    body?.callback?.callback_id,
+    body?.payload?.callback?.callback_id,
+    body?.message?.callback?.callback_id,
+    body?.callback_id
+  );
 
   return {
     type,
     userId,
-    text
+    text,
+    callbackPayload,
+    callbackId
   };
 }
 
@@ -79,7 +101,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
     }
 
     const event = extractEvent(req.body);
-    logger.info({ eventType: event.type }, formatIncomingLog(event.userId, event.text));
+    logger.info({ eventType: event.type }, formatIncomingLog(event.userId, event.text || event.callbackPayload));
 
     if (!event.userId) {
       logger.warn(
@@ -87,6 +109,54 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         "MAX webhook event skipped: missing user id"
       );
       return res.json({ ok: true, skipped: "WEBHOOK_USER_MISSING" });
+    }
+
+    if (event.type === "message_callback") {
+      if (event.callbackPayload.startsWith("confirm_submission:")) {
+        const submissionId = event.callbackPayload.slice("confirm_submission:".length).trim();
+        if (submissionId) {
+          const submission = await confirmSubmission({
+            submissionId,
+            actorUserId: event.userId,
+            actorRole: UserRole.USER
+          });
+
+          await logAuditEvent({
+            actorUserId: event.userId,
+            action: "bot.submission.confirmed",
+            entityType: "SUBMISSION",
+            entityId: submission.id,
+            meta: { source: "message_callback" },
+            req
+          });
+
+          await maxBotClient.sendMessage({
+            userId: event.userId,
+            text: submissionConfirmedMessage()
+          });
+
+          if (event.callbackId) {
+            await maxBotClient.answerCallback({
+              callbackId: event.callbackId,
+              notification: "Заявка подтверждена"
+            });
+          }
+
+          return res.json({ ok: true, handled: "SUBMISSION_CONFIRMED" });
+        }
+      }
+
+      if (event.callbackId) {
+        await maxBotClient.answerCallback({
+          callbackId: event.callbackId,
+          notification: "Неизвестное действие"
+        });
+      }
+      return res.json({ ok: true, skipped: "CALLBACK_NOT_HANDLED" });
+    }
+
+    if (event.type !== "message_created") {
+      return res.json({ ok: true, skipped: "EVENT_TYPE_NOT_SUPPORTED" });
     }
 
     let numericUserId: bigint;

@@ -1,13 +1,22 @@
 ﻿import { Router } from "express";
+import { env } from "../../config/env";
 import { validate } from "../../common/validate";
 import { requireAuth } from "../../middlewares/auth";
 import { logAuditEvent } from "../../services/audit.service";
+import { maxBotClient } from "../bot/max-bot.client";
+import { submissionReviewMessage } from "../bot/bot.templates";
 import {
   confirmSubmissionParamsSchema,
   createDraftSubmissionSchema,
   listSubmissionsQuerySchema
 } from "./submissions.schemas";
-import { confirmSubmission, createDraftSubmission, listEquipmentTypes, listMySubmissions } from "./submissions.service";
+import {
+  confirmSubmission,
+  createDraftSubmission,
+  getLatestPendingSubmission,
+  listEquipmentTypes,
+  listMySubmissions
+} from "./submissions.service";
 
 const router = Router();
 
@@ -22,6 +31,32 @@ router.get("/submissions/equipment-types", async (_req, res, next) => {
         id: item.id,
         name: item.name
       }))
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get("/submissions/pending/latest", async (req, res, next) => {
+  try {
+    const submission = await getLatestPendingSubmission(req.auth!.userId);
+    return res.json({
+      ok: true,
+      submission: submission
+        ? {
+            id: submission.id,
+            address: submission.address,
+            phone: submission.phone,
+            waterType: submission.waterType,
+            equipmentTypeId: submission.equipmentTypeId,
+            equipmentTypeName: submission.equipmentType?.name ?? null,
+            factoryNumber: submission.meterNumber,
+            productionYear: submission.productionYear,
+            reading: submission.currentValue.toString(),
+            status: submission.status,
+            createdAt: submission.createdAt
+          }
+        : null
     });
   } catch (error) {
     return next(error);
@@ -56,6 +91,40 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
         reading: submission.currentValue.toString()
       },
       req
+    });
+
+    await maxBotClient.sendMessage({
+      userId: req.auth!.userId,
+      text: submissionReviewMessage({
+        address: submission.address,
+        phone: submission.phone,
+        waterType: submission.waterType,
+        equipmentTypeName: submission.equipmentType?.name ?? null,
+        factoryNumber: submission.meterNumber,
+        productionYear: submission.productionYear,
+        reading: submission.currentValue.toString()
+      }),
+      attachments: [
+        {
+          type: "inline_keyboard",
+          payload: {
+            buttons: [
+              [
+                {
+                  type: "callback",
+                  text: "Подтвердить",
+                  payload: `confirm_submission:${submission.id}`
+                },
+                {
+                  type: "open_app",
+                  text: "Редактировать",
+                  web_app: env.MINIAPP_PUBLIC_URL
+                }
+              ]
+            ]
+          }
+        }
+      ]
     });
 
     return res.status(201).json({

@@ -15,6 +15,10 @@ export function listEquipmentTypes(accessToken) {
   return apiFetch("/api/submissions/equipment-types", {}, accessToken);
 }
 
+export function getLatestPendingSubmission(accessToken) {
+  return apiFetch("/api/submissions/pending/latest", {}, accessToken);
+}
+
 export function confirmSubmission(id, accessToken) {
   return apiFetch(`/api/submissions/${id}/confirm`, { method: "POST" }, accessToken);
 }

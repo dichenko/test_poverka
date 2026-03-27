@@ -9,8 +9,9 @@ import {
   listUsers,
   updateUser
 } from "../api/admin";
-import { confirmSubmission, createDraftSubmission, listEquipmentTypes } from "../api/submissions";
+import { createDraftSubmission, getLatestPendingSubmission, listEquipmentTypes } from "../api/submissions";
 import { useAuth } from "../hooks/useAuth";
+import { closeWebApp } from "../lib/maxWebApp";
 
 const submissionSchema = z.object({
   address: z.string().trim().min(3, "Введите адрес"),
@@ -64,7 +65,7 @@ function UserPanel({ accessToken }) {
   });
   const [equipmentTypes, setEquipmentTypes] = useState([]);
   const [error, setError] = useState("");
-  const [pending, setPending] = useState(null);
+  const [savedNotice, setSavedNotice] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function loadEquipment() {
@@ -72,9 +73,26 @@ function UserPanel({ accessToken }) {
     setEquipmentTypes(data.equipmentTypes || []);
   }
 
+  async function loadLatestPending() {
+    const data = await getLatestPendingSubmission(accessToken);
+    if (!data.submission) {
+      return;
+    }
+    setForm({
+      address: data.submission.address || "",
+      phone: data.submission.phone || "",
+      waterType: data.submission.waterType || "HVS",
+      equipmentTypeId: data.submission.equipmentTypeId ? String(data.submission.equipmentTypeId) : "",
+      factoryNumber: data.submission.factoryNumber || "",
+      productionYear: data.submission.productionYear ? String(data.submission.productionYear) : "",
+      reading: data.submission.reading || ""
+    });
+  }
+
   async function submitDraft(event) {
     event.preventDefault();
     setError("");
+    setSavedNotice("");
     const parsed = submissionSchema.safeParse(form);
     if (!parsed.success) {
       setError(parsed.error.issues[0].message);
@@ -86,8 +104,9 @@ function UserPanel({ accessToken }) {
         ...parsed.data,
         equipmentTypeId: Number(parsed.data.equipmentTypeId)
       };
-      const response = await createDraftSubmission(payload, accessToken);
-      setPending(response.submission);
+      await createDraftSubmission(payload, accessToken);
+      setSavedNotice("Заявка отправлена в бот. Подтвердите или отредактируйте ее в сообщении.");
+      setTimeout(() => closeWebApp(), 250);
     } catch (err) {
       setError(err.message || "Не удалось создать черновик");
     } finally {
@@ -95,32 +114,9 @@ function UserPanel({ accessToken }) {
     }
   }
 
-  async function confirmCurrent() {
-    if (!pending) {
-      return;
-    }
-    try {
-      setLoading(true);
-      await confirmSubmission(pending.id, accessToken);
-      setPending(null);
-      setForm({
-        address: "",
-        phone: "",
-        waterType: "HVS",
-        equipmentTypeId: "",
-        factoryNumber: "",
-        productionYear: "",
-        reading: ""
-      });
-    } catch (err) {
-      setError(err.message || "Не удалось подтвердить заявку");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
     void loadEquipment();
+    void loadLatestPending();
   }, []);
 
   return (
@@ -225,23 +221,7 @@ function UserPanel({ accessToken }) {
       </form>
 
       {error ? <div className="alert error">{error}</div> : null}
-
-      {pending ? (
-        <div className="alert info">
-          <p>Проверьте данные перед подтверждением:</p>
-          <p>Адрес: {pending.address || "-"}</p>
-          <p>Телефон: {pending.phone ? `+7${pending.phone}` : "-"}</p>
-          <p>Тип воды: {pending.waterType === "GVS" ? "ГВС" : "ХВС"}</p>
-          <p>Тип счетчика: {pending.equipmentTypeName || "-"}</p>
-          <p>Заводской номер: {pending.factoryNumber || "-"}</p>
-          <p>Год выпуска: {pending.productionYear || "-"}</p>
-          <p>Показания: {pending.reading || "-"}</p>
-          <button className="button secondary" type="button" onClick={confirmCurrent} disabled={loading}>
-            Подтвердить данные
-          </button>
-        </div>
-      ) : null}
-
+      {savedNotice ? <div className="alert info">{savedNotice}</div> : null}
     </div>
   );
 }

@@ -79,3 +79,10 @@ export function readyWebApp() {
     webApp.ready();
   }
 }
+
+export function closeWebApp() {
+  const webApp = getMaxWebApp();
+  if (webApp?.close) {
+    webApp.close();
+  }
+}

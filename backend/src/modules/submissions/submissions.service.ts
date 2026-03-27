@@ -49,6 +49,42 @@ export async function createDraftSubmission(input: {
 
   const currentValue = parseMeterValue(input.reading);
 
+  const existingPending = await prisma.meterSubmission.findFirst({
+    where: {
+      userId: user.id,
+      status: SubmissionStatus.PENDING_CONFIRMATION
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (existingPending) {
+    const updated = await prisma.meterSubmission.update({
+      where: { id: existingPending.id },
+      data: {
+        meterNumber: input.factoryNumber,
+        currentValue,
+        address: input.address,
+        phone: input.phone,
+        waterType: input.waterType,
+        equipmentTypeId: input.equipmentTypeId,
+        productionYear: input.productionYear
+      },
+      include: { equipmentType: true }
+    });
+
+    await prisma.submissionStatusHistory.create({
+      data: {
+        submissionId: updated.id,
+        oldStatus: SubmissionStatus.PENDING_CONFIRMATION,
+        newStatus: SubmissionStatus.PENDING_CONFIRMATION,
+        changedByUserId: user.id,
+        reason: "Draft edited from miniapp."
+      }
+    });
+
+    return updated;
+  }
+
   const submission = await prisma.meterSubmission.create({
     data: {
       userId: user.id,
@@ -147,5 +183,18 @@ export async function listMySubmissions(input: {
 export async function listEquipmentTypes() {
   return prisma.equipmentType.findMany({
     orderBy: { id: "asc" }
+  });
+}
+
+export async function getLatestPendingSubmission(userId: string) {
+  return prisma.meterSubmission.findFirst({
+    where: {
+      userId: parseUserId(userId),
+      status: SubmissionStatus.PENDING_CONFIRMATION
+    },
+    include: {
+      equipmentType: true
+    },
+    orderBy: { createdAt: "desc" }
   });
 }

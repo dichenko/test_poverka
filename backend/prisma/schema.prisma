@@ -176,3 +176,10 @@ model FileEntity {
   @@index([submissionId])
   @@map("files")
 }
+
+model EquipmentType {
+  id   Int    @id
+  name String @unique
+
+  @@map("equipment_types")
+}

@@ -9,15 +9,22 @@ import {
   listUsers,
   updateUser
 } from "../api/admin";
-import { confirmSubmission, createDraftSubmission, listMySubmissions } from "../api/submissions";
+import { confirmSubmission, createDraftSubmission, listEquipmentTypes, listMySubmissions } from "../api/submissions";
 import { useAuth } from "../hooks/useAuth";
 
 const submissionSchema = z.object({
-  meterNumber: z.string().trim().min(3, "Введите номер прибора"),
-  currentValue: z
+  address: z.string().trim().min(3, "Введите адрес"),
+  phone: z.string().trim().regex(/^\d{10}$/, "Введите ровно 10 цифр после +7"),
+  waterType: z.enum(["HVS", "GVS"], { message: "Выберите тип воды" }),
+  equipmentTypeId: z.string().trim().regex(/^\d+$/, "Выберите тип счетчика"),
+  factoryNumber: z.string().trim().regex(/^\d+$/, "Введите заводской номер (только цифры)"),
+  productionYear: z
     .string()
     .trim()
-    .regex(/^\d+([.,]\d{1,3})?$/, "Введите корректное числовое значение")
+    .refine((value) => /^\d{4}$/.test(value) && Number(value) >= 1950 && Number(value) <= 2050, {
+      message: "Год выпуска должен быть от 1950 до 2050"
+    }),
+  reading: z.string().trim().regex(/^\d+([.,]\d{1,3})?$/, "Введите корректное числовое показание")
 });
 
 function StatusScreen({ title, description, code }) {
@@ -33,11 +40,25 @@ function StatusScreen({ title, description, code }) {
 }
 
 function UserPanel({ accessToken }) {
-  const [form, setForm] = useState({ meterNumber: "", currentValue: "" });
+  const [form, setForm] = useState({
+    address: "",
+    phone: "",
+    waterType: "HVS",
+    equipmentTypeId: "",
+    factoryNumber: "",
+    productionYear: "",
+    reading: ""
+  });
+  const [equipmentTypes, setEquipmentTypes] = useState([]);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(null);
   const [recent, setRecent] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  async function loadEquipment() {
+    const data = await listEquipmentTypes(accessToken);
+    setEquipmentTypes(data.equipmentTypes || []);
+  }
 
   async function loadRecent() {
     const data = await listMySubmissions(accessToken);
@@ -54,7 +75,11 @@ function UserPanel({ accessToken }) {
     }
     try {
       setLoading(true);
-      const response = await createDraftSubmission(parsed.data, accessToken);
+      const payload = {
+        ...parsed.data,
+        equipmentTypeId: Number(parsed.data.equipmentTypeId)
+      };
+      const response = await createDraftSubmission(payload, accessToken);
       setPending(response.submission);
       await loadRecent();
     } catch (err) {
@@ -72,7 +97,15 @@ function UserPanel({ accessToken }) {
       setLoading(true);
       await confirmSubmission(pending.id, accessToken);
       setPending(null);
-      setForm({ meterNumber: "", currentValue: "" });
+      setForm({
+        address: "",
+        phone: "",
+        waterType: "HVS",
+        equipmentTypeId: "",
+        factoryNumber: "",
+        productionYear: "",
+        reading: ""
+      });
       await loadRecent();
     } catch (err) {
       setError(err.message || "Не удалось подтвердить заявку");
@@ -82,6 +115,7 @@ function UserPanel({ accessToken }) {
   }
 
   useEffect(() => {
+    void loadEquipment();
     void loadRecent();
   }, []);
 
@@ -90,22 +124,92 @@ function UserPanel({ accessToken }) {
       <h3>Передача показаний</h3>
       <form onSubmit={submitDraft}>
         <div className="field">
-          <label htmlFor="meterNumber">Номер счетчика</label>
+          <label htmlFor="address">Адрес</label>
           <input
-            id="meterNumber"
-            value={form.meterNumber}
-            onChange={(event) => setForm((prev) => ({ ...prev, meterNumber: event.target.value }))}
-            placeholder="Например 123456"
+            id="address"
+            value={form.address}
+            onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))}
+            placeholder="Например: ул. Ленина, д. 10, кв. 15"
           />
         </div>
         <div className="field">
-          <label htmlFor="currentValue">Текущее значение</label>
-          <input
-            id="currentValue"
-            value={form.currentValue}
-            onChange={(event) => setForm((prev) => ({ ...prev, currentValue: event.target.value }))}
-            placeholder="Например 88.5"
-          />
+          <label htmlFor="phone">Телефон</label>
+          <div className="phone-input">
+            <span>+7</span>
+            <input
+              id="phone"
+              inputMode="numeric"
+              maxLength={10}
+              value={form.phone}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, phone: event.target.value.replace(/\D/g, "").slice(0, 10) }))
+              }
+              placeholder="9001234567"
+            />
+          </div>
+        </div>
+        <div className="row">
+          <div className="field" style={{ flex: "1 1 160px" }}>
+            <label htmlFor="waterType">Тип воды</label>
+            <select
+              id="waterType"
+              value={form.waterType}
+              onChange={(event) => setForm((prev) => ({ ...prev, waterType: event.target.value }))}
+            >
+              <option value="HVS">ХВС</option>
+              <option value="GVS">ГВС</option>
+            </select>
+          </div>
+          <div className="field" style={{ flex: "2 1 260px" }}>
+            <label htmlFor="equipmentTypeId">Тип счетчика</label>
+            <select
+              id="equipmentTypeId"
+              value={form.equipmentTypeId}
+              onChange={(event) => setForm((prev) => ({ ...prev, equipmentTypeId: event.target.value }))}
+            >
+              <option value="">Выберите тип</option>
+              {equipmentTypes.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="row">
+          <div className="field" style={{ flex: "1 1 180px" }}>
+            <label htmlFor="factoryNumber">Заводской номер</label>
+            <input
+              id="factoryNumber"
+              inputMode="numeric"
+              value={form.factoryNumber}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, factoryNumber: event.target.value.replace(/\D/g, "") }))
+              }
+              placeholder="Только цифры"
+            />
+          </div>
+          <div className="field" style={{ flex: "1 1 180px" }}>
+            <label htmlFor="productionYear">Год выпуска</label>
+            <input
+              id="productionYear"
+              inputMode="numeric"
+              value={form.productionYear}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, productionYear: event.target.value.replace(/\D/g, "").slice(0, 4) }))
+              }
+              placeholder="Например 2021"
+            />
+          </div>
+          <div className="field" style={{ flex: "1 1 180px" }}>
+            <label htmlFor="reading">Показания</label>
+            <input
+              id="reading"
+              value={form.reading}
+              onChange={(event) => setForm((prev) => ({ ...prev, reading: event.target.value }))}
+              placeholder="Например 88.5"
+            />
+          </div>
         </div>
         <button className="button" type="submit" disabled={loading}>
           {loading ? "Сохранение..." : "Создать заявку"}
@@ -117,8 +221,13 @@ function UserPanel({ accessToken }) {
       {pending ? (
         <div className="alert info">
           <p>Проверьте данные перед подтверждением:</p>
-          <p>Счетчик: {pending.meterNumber}</p>
-          <p>Показание: {pending.currentValue}</p>
+          <p>Адрес: {pending.address || "-"}</p>
+          <p>Телефон: {pending.phone ? `+7${pending.phone}` : "-"}</p>
+          <p>Тип воды: {pending.waterType === "GVS" ? "ГВС" : "ХВС"}</p>
+          <p>Тип счетчика: {pending.equipmentTypeName || "-"}</p>
+          <p>Заводской номер: {pending.factoryNumber || "-"}</p>
+          <p>Год выпуска: {pending.productionYear || "-"}</p>
+          <p>Показания: {pending.reading || "-"}</p>
           <button className="button secondary" type="button" onClick={confirmCurrent} disabled={loading}>
             Подтвердить данные
           </button>
@@ -130,8 +239,10 @@ function UserPanel({ accessToken }) {
         <thead>
           <tr>
             <th>Дата</th>
-            <th>Счетчик</th>
-            <th>Значение</th>
+            <th>Адрес</th>
+            <th>Тип</th>
+            <th>Номер</th>
+            <th>Показания</th>
             <th>Статус</th>
           </tr>
         </thead>
@@ -139,14 +250,16 @@ function UserPanel({ accessToken }) {
           {recent.map((item) => (
             <tr key={item.id}>
               <td>{new Date(item.createdAt).toLocaleString()}</td>
-              <td>{item.meterNumber}</td>
-              <td>{item.currentValue}</td>
+              <td>{item.address || "-"}</td>
+              <td>{item.equipmentTypeName || "-"}</td>
+              <td>{item.factoryNumber || "-"}</td>
+              <td>{item.reading}</td>
               <td>{item.status}</td>
             </tr>
           ))}
           {!recent.length ? (
             <tr>
-              <td colSpan={4}>Заявок пока нет</td>
+              <td colSpan={6}>Заявок пока нет</td>
             </tr>
           ) : null}
         </tbody>
@@ -356,8 +469,12 @@ function AdminPanel({ accessToken }) {
                 <th>Дата</th>
                 <th>Пользователь</th>
                 <th>Организация</th>
-                <th>Счетчик</th>
-                <th>Значение</th>
+                <th>Адрес</th>
+                <th>Тип воды</th>
+                <th>Тип счетчика</th>
+                <th>Заводской №</th>
+                <th>Год</th>
+                <th>Показания</th>
                 <th>Статус</th>
                 <th />
               </tr>
@@ -368,8 +485,12 @@ function AdminPanel({ accessToken }) {
                   <td>{new Date(item.createdAt).toLocaleString()}</td>
                   <td>{item.user.fullName}</td>
                   <td>{item.organization.name}</td>
-                  <td>{item.meterNumber}</td>
-                  <td>{item.currentValue}</td>
+                  <td>{item.address || "-"}</td>
+                  <td>{item.waterType === "GVS" ? "ГВС" : item.waterType === "HVS" ? "ХВС" : "-"}</td>
+                  <td>{item.equipmentTypeName || "-"}</td>
+                  <td>{item.factoryNumber || "-"}</td>
+                  <td>{item.productionYear || "-"}</td>
+                  <td>{item.reading}</td>
                   <td>{item.status}</td>
                   <td>
                     <button className="button" type="button" onClick={() => loadHistory(item.id)}>

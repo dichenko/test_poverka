@@ -238,7 +238,8 @@ router.get("/admin/submissions", validate(adminListSubmissionsQuerySchema, "quer
       },
       include: {
         user: true,
-        organization: true
+        organization: true,
+        equipmentType: true
       },
       orderBy: { createdAt: "desc" },
       take: query.limit
@@ -248,8 +249,14 @@ router.get("/admin/submissions", validate(adminListSubmissionsQuerySchema, "quer
       ok: true,
       submissions: submissions.map((item) => ({
         id: item.id,
-        meterNumber: item.meterNumber,
-        currentValue: item.currentValue.toString(),
+        address: item.address,
+        phone: item.phone,
+        waterType: item.waterType,
+        equipmentTypeId: item.equipmentTypeId,
+        equipmentTypeName: item.equipmentType?.name ?? null,
+        factoryNumber: item.meterNumber,
+        productionYear: item.productionYear,
+        reading: item.currentValue.toString(),
         status: item.status,
         source: item.source,
         createdAt: item.createdAt,

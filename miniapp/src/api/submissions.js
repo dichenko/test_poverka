@@ -11,6 +11,10 @@ export function createDraftSubmission(payload, accessToken) {
   );
 }
 
+export function listEquipmentTypes(accessToken) {
+  return apiFetch("/api/submissions/equipment-types", {}, accessToken);
+}
+
 export function confirmSubmission(id, accessToken) {
   return apiFetch(`/api/submissions/${id}/confirm`, { method: "POST" }, accessToken);
 }

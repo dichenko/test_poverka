@@ -54,6 +54,26 @@ body {
   padding: 10px;
 }
 
+.phone-input {
+  display: flex;
+  align-items: center;
+  border: 1px solid #c8d5e3;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.phone-input span {
+  padding: 10px;
+  background: #f3f7fb;
+  border-right: 1px solid #c8d5e3;
+  font-weight: 600;
+}
+
+.phone-input input {
+  border: 0;
+  border-radius: 0;
+}
+
 .button {
   border: none;
   background: #0d4d8f;

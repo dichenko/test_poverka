@@ -24,6 +24,11 @@ enum SubmissionSource {
   ADMIN
 }
 
+enum WaterType {
+  HVS
+  GVS
+}
+
 enum AuditEntityType {
   USER
   ORGANIZATION
@@ -70,26 +75,33 @@ model User {
 }
 
 model MeterSubmission {
-  id             String           @id @default(cuid())
-  userId         BigInt           @map("user_id")
-  organizationId BigInt           @map("organization_id")
-  meterNumber    String           @map("meter_number")
-  currentValue   Decimal          @db.Decimal(14, 3) @map("current_value")
-  status         SubmissionStatus
-  source         SubmissionSource @default(MINIAPP)
-  draftCreatedAt DateTime         @default(now()) @map("draft_created_at")
-  confirmedAt    DateTime?        @map("confirmed_at")
-  rejectedAt     DateTime?        @map("rejected_at")
-  createdAt      DateTime         @default(now()) @map("created_at")
-  updatedAt      DateTime         @updatedAt @map("updated_at")
+  id              String           @id @default(cuid())
+  userId          BigInt           @map("user_id")
+  organizationId  BigInt           @map("organization_id")
+  meterNumber     String           @map("meter_number")
+  currentValue    Decimal          @db.Decimal(14, 3) @map("current_value")
+  address         String?          @map("address")
+  phone           String?          @map("phone")
+  waterType       WaterType?       @map("water_type")
+  equipmentTypeId Int?             @map("equipment_type_id")
+  productionYear  Int?             @map("production_year")
+  status          SubmissionStatus
+  source          SubmissionSource @default(MINIAPP)
+  draftCreatedAt  DateTime         @default(now()) @map("draft_created_at")
+  confirmedAt     DateTime?        @map("confirmed_at")
+  rejectedAt      DateTime?        @map("rejected_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
   user          User                      @relation(fields: [userId], references: [id])
   organization  Organization              @relation(fields: [organizationId], references: [id])
+  equipmentType EquipmentType?            @relation(fields: [equipmentTypeId], references: [id])
   statusHistory SubmissionStatusHistory[]
   files         FileEntity[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([organizationId, createdAt(sort: Desc)])
+  @@index([equipmentTypeId])
   @@index([status, createdAt(sort: Desc)])
   @@map("meter_submissions")
 }
@@ -180,6 +192,8 @@ model FileEntity {
 model EquipmentType {
   id   Int    @id
   name String @unique
+
+  submissions MeterSubmission[]
 
   @@map("equipment_types")
 }

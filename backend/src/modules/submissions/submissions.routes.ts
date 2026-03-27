@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { validate } from "../../common/validate";
 import { requireAuth } from "../../middlewares/auth";
 import { logAuditEvent } from "../../services/audit.service";
@@ -7,18 +7,38 @@ import {
   createDraftSubmissionSchema,
   listSubmissionsQuerySchema
 } from "./submissions.schemas";
-import { confirmSubmission, createDraftSubmission, listMySubmissions } from "./submissions.service";
+import { confirmSubmission, createDraftSubmission, listEquipmentTypes, listMySubmissions } from "./submissions.service";
 
 const router = Router();
 
 router.use(requireAuth);
 
+router.get("/submissions/equipment-types", async (_req, res, next) => {
+  try {
+    const equipmentTypes = await listEquipmentTypes();
+    return res.json({
+      ok: true,
+      equipmentTypes: equipmentTypes.map((item) => ({
+        id: item.id,
+        name: item.name
+      }))
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (req, res, next) => {
   try {
     const submission = await createDraftSubmission({
       userId: req.auth!.userId,
-      meterNumber: req.body.meterNumber,
-      currentValue: req.body.currentValue
+      address: req.body.address,
+      phone: req.body.phone,
+      waterType: req.body.waterType,
+      equipmentTypeId: req.body.equipmentTypeId,
+      factoryNumber: req.body.factoryNumber,
+      productionYear: req.body.productionYear,
+      reading: req.body.reading
     });
 
     await logAuditEvent({
@@ -27,8 +47,13 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
       entityType: "SUBMISSION",
       entityId: submission.id,
       meta: {
-        meterNumber: submission.meterNumber,
-        currentValue: submission.currentValue.toString()
+        address: submission.address,
+        phone: submission.phone,
+        waterType: submission.waterType,
+        equipmentTypeId: submission.equipmentTypeId,
+        factoryNumber: submission.meterNumber,
+        productionYear: submission.productionYear,
+        reading: submission.currentValue.toString()
       },
       req
     });
@@ -37,8 +62,14 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
       ok: true,
       submission: {
         id: submission.id,
-        meterNumber: submission.meterNumber,
-        currentValue: submission.currentValue.toString(),
+        address: submission.address,
+        phone: submission.phone,
+        waterType: submission.waterType,
+        equipmentTypeId: submission.equipmentTypeId,
+        equipmentTypeName: submission.equipmentType?.name ?? null,
+        factoryNumber: submission.meterNumber,
+        productionYear: submission.productionYear,
+        reading: submission.currentValue.toString(),
         status: submission.status,
         createdAt: submission.createdAt
       }
@@ -89,10 +120,16 @@ router.get("/submissions/me", validate(listSubmissionsQuerySchema, "query"), asy
 
     return res.json({
       ok: true,
-      submissions: submissions.map((item: any) => ({
+      submissions: submissions.map((item) => ({
         id: item.id,
-        meterNumber: item.meterNumber,
-        currentValue: item.currentValue.toString(),
+        address: item.address,
+        phone: item.phone,
+        waterType: item.waterType,
+        equipmentTypeId: item.equipmentTypeId,
+        equipmentTypeName: item.equipmentType?.name ?? null,
+        factoryNumber: item.meterNumber,
+        productionYear: item.productionYear,
+        reading: item.currentValue.toString(),
         status: item.status,
         createdAt: item.createdAt,
         confirmedAt: item.confirmedAt

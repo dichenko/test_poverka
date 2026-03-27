@@ -1,4 +1,4 @@
-﻿import { SubmissionStatus, type UserRole } from "@prisma/client";
+﻿import { SubmissionStatus, type UserRole, type WaterType } from "@prisma/client";
 import { AppError } from "../../common/app-error";
 import { prisma } from "../../common/prisma";
 
@@ -21,8 +21,13 @@ function parseUserId(raw: string) {
 
 export async function createDraftSubmission(input: {
   userId: string;
-  meterNumber: string;
-  currentValue: string;
+  address: string;
+  phone: string;
+  waterType: WaterType;
+  equipmentTypeId: number;
+  factoryNumber: string;
+  productionYear: number;
+  reading: string;
 }) {
   const user = await prisma.user.findUnique({
     where: { id: parseUserId(input.userId) },
@@ -35,16 +40,29 @@ export async function createDraftSubmission(input: {
     throw new AppError("Organization is required for submission.", 403, "ORG_REQUIRED");
   }
 
-  const currentValue = parseMeterValue(input.currentValue);
+  const equipmentType = await prisma.equipmentType.findUnique({
+    where: { id: input.equipmentTypeId }
+  });
+  if (!equipmentType) {
+    throw new AppError("Equipment type not found.", 400, "EQUIPMENT_TYPE_NOT_FOUND");
+  }
+
+  const currentValue = parseMeterValue(input.reading);
 
   const submission = await prisma.meterSubmission.create({
     data: {
       userId: user.id,
       organizationId: user.organizationId,
-      meterNumber: input.meterNumber,
+      meterNumber: input.factoryNumber,
       currentValue,
+      address: input.address,
+      phone: input.phone,
+      waterType: input.waterType,
+      equipmentTypeId: input.equipmentTypeId,
+      productionYear: input.productionYear,
       status: SubmissionStatus.PENDING_CONFIRMATION
-    }
+    },
+    include: { equipmentType: true }
   });
 
   await prisma.submissionStatusHistory.create({
@@ -118,7 +136,16 @@ export async function listMySubmissions(input: {
       userId: parseUserId(input.userId),
       status: input.status
     },
+    include: {
+      equipmentType: true
+    },
     orderBy: { createdAt: "desc" },
     take: input.limit
+  });
+}
+
+export async function listEquipmentTypes() {
+  return prisma.equipmentType.findMany({
+    orderBy: { id: "asc" }
   });
 }

@@ -30,12 +30,12 @@ function reviewKeyboard(submissionId: string) {
         buttons: [
           [
             {
-              type: "callback",
+              type: "message",
               text: "Подтвердить",
               payload: `confirm_submission:${submissionId}`
             },
             {
-              type: "callback",
+              type: "message",
               text: "Отменить",
               payload: `cancel_submission:${submissionId}`
             }

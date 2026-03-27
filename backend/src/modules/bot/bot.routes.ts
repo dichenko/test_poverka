@@ -121,7 +121,7 @@ function cancelKeyboard(submissionId: string) {
         buttons: [
           [
             {
-              type: "callback",
+              type: "message",
               text: "Отменить",
               payload: `cancel_submission:${submissionId}`
             }

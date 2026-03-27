@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 import { validate } from "../../common/validate";
 import { requireAuth } from "../../middlewares/auth";
@@ -43,8 +43,9 @@ router.post("/auth/logout", async (req, res, next) => {
 
 router.get("/auth/me", requireAuth, async (req, res, next) => {
   try {
+    const userId = BigInt(req.auth!.userId);
     const user = await prisma.user.findUnique({
-      where: { id: req.auth!.userId },
+      where: { id: userId },
       include: { organization: true }
     });
     if (!user) {
@@ -59,11 +60,10 @@ router.get("/auth/me", requireAuth, async (req, res, next) => {
     return res.json({
       ok: true,
       user: {
-        id: user.id,
-        maxUserId: user.maxUserId,
+        id: user.id.toString(),
+        maxUserId: user.id.toString(),
         fullName: user.fullName,
         role: user.role,
-        isActive: user.isActive,
         organizationId: user.organizationId?.toString() ?? null,
         organizationName: user.organization?.name ?? null
       }

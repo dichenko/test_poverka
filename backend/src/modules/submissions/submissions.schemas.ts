@@ -1,4 +1,4 @@
-import { SubmissionStatus } from "@prisma/client";
+﻿import { SubmissionStatus } from "@prisma/client";
 import { z } from "zod";
 
 export const createDraftSubmissionSchema = z.object({
@@ -10,7 +10,7 @@ export const createDraftSubmissionSchema = z.object({
 });
 
 export const confirmSubmissionParamsSchema = z.object({
-  id: z.string().cuid()
+  id: z.string().trim().min(1)
 });
 
 export const listSubmissionsQuerySchema = z.object({

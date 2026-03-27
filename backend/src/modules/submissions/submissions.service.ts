@@ -1,4 +1,4 @@
-import { SubmissionStatus, type UserRole } from "@prisma/client";
+﻿import { SubmissionStatus, type UserRole } from "@prisma/client";
 import { AppError } from "../../common/app-error";
 import { prisma } from "../../common/prisma";
 
@@ -11,17 +11,25 @@ function parseMeterValue(rawValue: string) {
   return normalized;
 }
 
+function parseUserId(raw: string) {
+  try {
+    return BigInt(raw);
+  } catch {
+    throw new AppError("Invalid user id.", 400, "USER_ID_INVALID");
+  }
+}
+
 export async function createDraftSubmission(input: {
   userId: string;
   meterNumber: string;
   currentValue: string;
 }) {
   const user = await prisma.user.findUnique({
-    where: { id: input.userId },
+    where: { id: parseUserId(input.userId) },
     include: { organization: true }
   });
-  if (!user || !user.isActive) {
-    throw new AppError("User is inactive or missing.", 403, "USER_INACTIVE");
+  if (!user) {
+    throw new AppError("User is missing.", 403, "USER_NOT_FOUND");
   }
   if (!user.organizationId) {
     throw new AppError("Organization is required for submission.", 403, "ORG_REQUIRED");
@@ -63,9 +71,12 @@ export async function confirmSubmission(input: {
   if (!submission) {
     throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
   }
+
+  const actorUserId = parseUserId(input.actorUserId);
+
   if (
     input.actorRole !== "ADMIN" &&
-    (submission.userId !== input.actorUserId || submission.status !== SubmissionStatus.PENDING_CONFIRMATION)
+    (submission.userId !== actorUserId || submission.status !== SubmissionStatus.PENDING_CONFIRMATION)
   ) {
     throw new AppError("Submission cannot be confirmed.", 403, "SUBMISSION_FORBIDDEN");
   }
@@ -89,7 +100,7 @@ export async function confirmSubmission(input: {
       submissionId: submission.id,
       oldStatus: submission.status,
       newStatus: SubmissionStatus.CONFIRMED,
-      changedByUserId: input.actorUserId,
+      changedByUserId: actorUserId,
       reason: "Confirmed by user."
     }
   });
@@ -104,7 +115,7 @@ export async function listMySubmissions(input: {
 }) {
   return prisma.meterSubmission.findMany({
     where: {
-      userId: input.userId,
+      userId: parseUserId(input.userId),
       status: input.status
     },
     orderBy: { createdAt: "desc" },

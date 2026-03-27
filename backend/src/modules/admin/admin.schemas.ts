@@ -1,39 +1,33 @@
-import { UserRole } from "@prisma/client";
+﻿import { UserRole } from "@prisma/client";
 import { z } from "zod";
 
 export const adminListUsersQuerySchema = z.object({
   role: z.nativeEnum(UserRole).optional(),
   organizationId: z.coerce.bigint().optional(),
-  isActive: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((value) => (value === undefined ? undefined : value === "true")),
   search: z.string().trim().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50)
 });
 
 export const adminCreateUserSchema = z.object({
-  maxUserId: z.string().trim().min(1),
-  firstName: z.string().trim().min(1),
-  lastName: z.string().trim().optional().nullable(),
-  username: z.string().trim().optional().nullable(),
+  fullName: z.string().trim().min(1),
   phone: z.string().trim().optional().nullable(),
-  role: z.nativeEnum(UserRole),
+  city: z.string().trim().optional().nullable(),
+  role: z.nativeEnum(UserRole).default(UserRole.USER),
+  userTarif: z.number().nonnegative().optional().nullable(),
   organizationId: z.coerce.bigint().optional().nullable(),
-  isActive: z.boolean().default(true)
+  orgName: z.string().trim().optional().nullable(),
+  orgEmail: z.string().trim().email().optional().nullable()
 });
 
-export const adminUpdateUserSchema = adminCreateUserSchema.partial().extend({
-  maxUserId: z.string().trim().min(1).optional()
-});
+export const adminUpdateUserSchema = adminCreateUserSchema.partial();
 
 export const adminUserParamsSchema = z.object({
-  id: z.string().cuid()
+  id: z.coerce.bigint()
 });
 
 export const adminListSubmissionsQuerySchema = z.object({
   organizationId: z.coerce.bigint().optional(),
-  userId: z.string().cuid().optional(),
+  userId: z.coerce.bigint().optional(),
   status: z.enum(["DRAFT", "PENDING_CONFIRMATION", "CONFIRMED", "REJECTED"]).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
@@ -47,7 +41,7 @@ export const adminAuditLogsQuerySchema = z.object({
 });
 
 export const adminSubmissionParamsSchema = z.object({
-  id: z.string().cuid()
+  id: z.string().trim().min(1)
 });
 
 export const adminOrgParamsSchema = z.object({

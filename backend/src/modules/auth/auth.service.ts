@@ -1,4 +1,4 @@
-import { UserRole } from "@prisma/client";
+﻿import { UserRole } from "@prisma/client";
 import type { Request, Response } from "express";
 import { AppError } from "../../common/app-error";
 import { prisma } from "../../common/prisma";
@@ -6,10 +6,6 @@ import { env, isProduction } from "../../config/env";
 import { logAuditEvent } from "../../services/audit.service";
 import { createRefreshToken, hashToken, signAccessToken } from "../../services/token.service";
 import type { ValidatedMaxInitData } from "./max-init-data";
-
-function buildFullName(firstName?: string, lastName?: string) {
-  return [firstName, lastName].filter(Boolean).join(" ").trim();
-}
 
 function getRefreshCookieOptions() {
   return {
@@ -19,6 +15,14 @@ function getRefreshCookieOptions() {
     path: "/api/auth",
     maxAge: env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000
   };
+}
+
+function parseUserId(raw: string): bigint {
+  try {
+    return BigInt(raw);
+  } catch {
+    throw new AppError("Invalid MAX user id.", 400, "MAX_USER_ID_INVALID");
+  }
 }
 
 export async function createAuthSession(input: {
@@ -51,41 +55,17 @@ export async function createAuthSession(input: {
     }
   });
 
+  const numericUserId = parseUserId(validated.maxUserId);
   const user = await prisma.user.findUnique({
-    where: { maxUserId: validated.maxUserId },
+    where: { id: numericUserId },
     include: { organization: true }
   });
 
   if (!user) {
     throw new AppError("User is not found in the access list.", 403, "USER_NOT_FOUND");
   }
-  if (!user.isActive) {
-    throw new AppError("Account is inactive.", 403, "USER_INACTIVE");
-  }
   if (user.role === UserRole.USER && !user.organizationId) {
     throw new AppError("User has no organization assigned.", 403, "USER_ORG_REQUIRED");
-  }
-
-  const patchedFullName = buildFullName(validated.firstName, validated.lastName);
-  if (validated.firstName && patchedFullName && patchedFullName !== user.fullName) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        firstName: validated.firstName,
-        lastName: validated.lastName ?? user.lastName,
-        fullName: patchedFullName,
-        username: validated.username ?? user.username,
-        lastLoginAt: new Date()
-      }
-    });
-  } else {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        username: validated.username ?? user.username,
-        lastLoginAt: new Date()
-      }
-    });
   }
 
   const refreshToken = createRefreshToken();
@@ -105,18 +85,18 @@ export async function createAuthSession(input: {
   res.cookie(env.REFRESH_COOKIE_NAME, refreshToken, getRefreshCookieOptions());
 
   const accessToken = signAccessToken({
-    sub: user.id,
-    maxUserId: user.maxUserId,
+    sub: user.id.toString(),
+    maxUserId: user.id.toString(),
     role: user.role
   });
 
   await logAuditEvent({
-    actorUserId: user.id,
+    actorUserId: user.id.toString(),
     action: "auth.session.created",
     entityType: "AUTH_SESSION",
     meta: {
       role: user.role,
-      maxUserId: user.maxUserId
+      maxUserId: user.id.toString()
     },
     req
   });
@@ -124,16 +104,15 @@ export async function createAuthSession(input: {
   return {
     accessToken,
     user: {
-      id: user.id,
-      maxUserId: user.maxUserId,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      id: user.id.toString(),
+      maxUserId: user.id.toString(),
+      firstName: null,
+      lastName: null,
       fullName: user.fullName,
-      username: user.username,
+      username: null,
       role: user.role,
       organizationId: user.organizationId?.toString() ?? null,
-      organizationName: user.organization?.name ?? null,
-      isActive: user.isActive
+      organizationName: user.organization?.name ?? null
     }
   };
 }
@@ -152,9 +131,6 @@ export async function rotateRefreshToken(req: Request, res: Response) {
 
   if (!session || session.revokedAt || session.expiresAt < new Date()) {
     throw new AppError("Refresh token is invalid or expired.", 401, "REFRESH_INVALID");
-  }
-  if (!session.user.isActive) {
-    throw new AppError("Account is inactive.", 403, "USER_INACTIVE");
   }
 
   const newToken = createRefreshToken();
@@ -183,20 +159,19 @@ export async function rotateRefreshToken(req: Request, res: Response) {
   res.cookie(env.REFRESH_COOKIE_NAME, newToken, getRefreshCookieOptions());
 
   const accessToken = signAccessToken({
-    sub: session.user.id,
-    maxUserId: session.user.maxUserId,
+    sub: session.user.id.toString(),
+    maxUserId: session.user.id.toString(),
     role: session.user.role
   });
 
   return {
     accessToken,
     user: {
-      id: session.user.id,
-      maxUserId: session.user.maxUserId,
+      id: session.user.id.toString(),
+      maxUserId: session.user.id.toString(),
       fullName: session.user.fullName,
       role: session.user.role,
-      organizationId: session.user.organizationId?.toString() ?? null,
-      isActive: session.user.isActive
+      organizationId: session.user.organizationId?.toString() ?? null
     }
   };
 }

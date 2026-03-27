@@ -22,6 +22,8 @@ router.post("/files/upload", upload.single("file"), async (req, res, next) => {
       });
     }
 
+    const actorUserId = BigInt(req.auth!.userId);
+
     const provider = getStorageProvider();
     const stored = await provider.saveFile({
       buffer: req.file.buffer,
@@ -31,7 +33,7 @@ router.post("/files/upload", upload.single("file"), async (req, res, next) => {
 
     const file = await prisma.fileEntity.create({
       data: {
-        ownerUserId: req.auth!.userId,
+        ownerUserId: actorUserId,
         storageKey: stored.storageKey,
         originalName: stored.originalName,
         mimeType: stored.mimeType,

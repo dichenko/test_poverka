@@ -1,4 +1,4 @@
-import { Prisma, UserRole } from "@prisma/client";
+﻿import { Prisma, UserRole } from "@prisma/client";
 import { Router } from "express";
 import { prisma } from "../../common/prisma";
 import { validate } from "../../common/validate";
@@ -27,7 +27,7 @@ router.get("/admin/organizations", async (_req, res, next) => {
     });
     res.json({
       ok: true,
-      organizations: organizations.map((org: any) => ({
+      organizations: organizations.map((org) => ({
         id: org.id.toString(),
         name: org.name,
         email: org.email,
@@ -89,15 +89,15 @@ router.patch(
 router.get("/admin/users", validate(adminListUsersQuerySchema, "query"), async (req, res, next) => {
   try {
     const query = adminListUsersQuerySchema.parse(req.query);
+    const searchId = query.search && /^\d+$/.test(query.search) ? BigInt(query.search) : undefined;
     const where: Prisma.UserWhereInput = {
       role: query.role,
       organizationId: query.organizationId,
-      isActive: query.isActive,
       OR: query.search
         ? [
             { fullName: { contains: query.search, mode: "insensitive" } },
-            { username: { contains: query.search, mode: "insensitive" } },
-            { maxUserId: { contains: query.search, mode: "insensitive" } }
+            { phone: { contains: query.search, mode: "insensitive" } },
+            ...(searchId ? [{ id: searchId }] : [])
           ]
         : undefined
     };
@@ -105,25 +105,23 @@ router.get("/admin/users", validate(adminListUsersQuerySchema, "query"), async (
     const users = await prisma.user.findMany({
       where,
       include: { organization: true },
-      orderBy: [{ role: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ role: "desc" }, { id: "desc" }],
       take: query.limit
     });
 
     res.json({
       ok: true,
-      users: users.map((user: any) => ({
-        id: user.id,
-        maxUserId: user.maxUserId,
+      users: users.map((user) => ({
+        id: user.id.toString(),
         fullName: user.fullName,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        username: user.username,
         phone: user.phone,
+        city: user.city,
         role: user.role,
-        isActive: user.isActive,
+        userTarif: user.userTarif,
         organizationId: user.organizationId?.toString() ?? null,
         organizationName: user.organization?.name ?? null,
-        createdAt: user.createdAt
+        orgName: user.orgName,
+        orgEmail: user.orgEmail
       }))
     });
   } catch (error) {
@@ -133,18 +131,16 @@ router.get("/admin/users", validate(adminListUsersQuerySchema, "query"), async (
 
 router.post("/admin/users", validate(adminCreateUserSchema), async (req, res, next) => {
   try {
-    const fullName = [req.body.firstName, req.body.lastName].filter(Boolean).join(" ").trim();
     const user = await prisma.user.create({
       data: {
-        maxUserId: req.body.maxUserId,
-        firstName: req.body.firstName,
-        lastName: req.body.lastName ?? null,
-        fullName,
-        username: req.body.username ?? null,
+        fullName: req.body.fullName,
         phone: req.body.phone ?? null,
+        city: req.body.city ?? null,
         role: req.body.role,
+        userTarif: req.body.userTarif ?? null,
         organizationId: req.body.organizationId ?? null,
-        isActive: req.body.isActive
+        orgName: req.body.orgName ?? null,
+        orgEmail: req.body.orgEmail ?? null
       }
     });
 
@@ -152,7 +148,7 @@ router.post("/admin/users", validate(adminCreateUserSchema), async (req, res, ne
       actorUserId: req.auth!.userId,
       action: "admin.user.created",
       entityType: "USER",
-      entityId: user.id,
+      entityId: user.id.toString(),
       meta: { role: user.role, organizationId: user.organizationId?.toString() ?? null },
       req
     });
@@ -160,7 +156,11 @@ router.post("/admin/users", validate(adminCreateUserSchema), async (req, res, ne
     res.status(201).json({
       ok: true,
       user: {
-        ...user,
+        id: user.id.toString(),
+        fullName: user.fullName,
+        phone: user.phone,
+        city: user.city,
+        role: user.role,
         organizationId: user.organizationId?.toString() ?? null
       }
     });
@@ -176,32 +176,18 @@ router.patch(
   async (req, res, next) => {
     try {
       const params = adminUserParamsSchema.parse(req.params);
-      const existing = await prisma.user.findUnique({
-        where: { id: params.id }
-      });
-      if (!existing) {
-        return res.status(404).json({
-          ok: false,
-          error: { code: "USER_NOT_FOUND", message: "User not found." }
-        });
-      }
-
-      const nextFirstName = req.body.firstName ?? existing.firstName;
-      const nextLastName = req.body.lastName ?? existing.lastName;
-      const fullName = [nextFirstName, nextLastName].filter(Boolean).join(" ").trim();
 
       const user = await prisma.user.update({
         where: { id: params.id },
         data: {
-          maxUserId: req.body.maxUserId,
-          firstName: req.body.firstName,
-          lastName: req.body.lastName,
-          fullName,
-          username: req.body.username,
+          fullName: req.body.fullName,
           phone: req.body.phone,
+          city: req.body.city,
           role: req.body.role,
+          userTarif: req.body.userTarif,
           organizationId: req.body.organizationId,
-          isActive: req.body.isActive
+          orgName: req.body.orgName,
+          orgEmail: req.body.orgEmail
         }
       });
 
@@ -209,7 +195,7 @@ router.patch(
         actorUserId: req.auth!.userId,
         action: "admin.user.updated",
         entityType: "USER",
-        entityId: user.id,
+        entityId: user.id.toString(),
         meta: {
           ...req.body,
           organizationId: req.body.organizationId?.toString() ?? null
@@ -220,7 +206,11 @@ router.patch(
       return res.json({
         ok: true,
         user: {
-          ...user,
+          id: user.id.toString(),
+          fullName: user.fullName,
+          phone: user.phone,
+          city: user.city,
+          role: user.role,
           organizationId: user.organizationId?.toString() ?? null
         }
       });
@@ -256,7 +246,7 @@ router.get("/admin/submissions", validate(adminListSubmissionsQuerySchema, "quer
 
     res.json({
       ok: true,
-      submissions: submissions.map((item: any) => ({
+      submissions: submissions.map((item) => ({
         id: item.id,
         meterNumber: item.meterNumber,
         currentValue: item.currentValue.toString(),
@@ -265,9 +255,9 @@ router.get("/admin/submissions", validate(adminListSubmissionsQuerySchema, "quer
         createdAt: item.createdAt,
         confirmedAt: item.confirmedAt,
         user: {
-          id: item.user.id,
+          id: item.user.id.toString(),
           fullName: item.user.fullName,
-          maxUserId: item.user.maxUserId
+          phone: item.user.phone
         },
         organization: {
           id: item.organization.id.toString(),
@@ -295,7 +285,7 @@ router.get(
 
       res.json({
         ok: true,
-        history: history.map((item: any) => ({
+        history: history.map((item) => ({
           id: item.id,
           oldStatus: item.oldStatus,
           newStatus: item.newStatus,
@@ -303,7 +293,7 @@ router.get(
           createdAt: item.createdAt,
           changedBy: item.changedByUser
             ? {
-                id: item.changedByUser.id,
+                id: item.changedByUser.id.toString(),
                 fullName: item.changedByUser.fullName
               }
             : null
@@ -332,7 +322,7 @@ router.get("/admin/audit-logs", validate(adminAuditLogsQuerySchema, "query"), as
 
     res.json({
       ok: true,
-      logs: logs.map((item: any) => ({
+      logs: logs.map((item) => ({
         id: item.id,
         action: item.action,
         entityType: item.entityType,
@@ -343,7 +333,7 @@ router.get("/admin/audit-logs", validate(adminAuditLogsQuerySchema, "query"), as
         createdAt: item.createdAt,
         actor: item.actorUser
           ? {
-              id: item.actorUser.id,
+              id: item.actorUser.id.toString(),
               fullName: item.actorUser.fullName,
               role: item.actorUser.role
             }

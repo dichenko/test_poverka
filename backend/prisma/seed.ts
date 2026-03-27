@@ -20,71 +20,77 @@ async function main() {
     }
   });
 
+  const adminId = BigInt(900001);
+  const user1Id = BigInt(1001);
+  const user2Id = BigInt(1002);
+
   const admin = await prisma.user.upsert({
-    where: { maxUserId: "900001" },
+    where: { id: adminId },
     update: {
-      firstName: "Admin",
-      lastName: "User",
       fullName: "Admin User",
-      username: "admin_user",
       role: UserRole.ADMIN,
-      isActive: true,
-      organizationId: null
+      phone: "+79000000001",
+      city: "Moscow",
+      organizationId: null,
+      orgName: null,
+      orgEmail: null
     },
     create: {
-      maxUserId: "900001",
-      firstName: "Admin",
-      lastName: "User",
+      id: adminId,
       fullName: "Admin User",
-      username: "admin_user",
       role: UserRole.ADMIN,
-      isActive: true
+      phone: "+79000000001",
+      city: "Moscow"
     }
   });
 
   const user1 = await prisma.user.upsert({
-    where: { maxUserId: "1001" },
+    where: { id: user1Id },
     update: {
-      firstName: "Ivan",
-      lastName: "Petrov",
       fullName: "Ivan Petrov",
-      username: "ivan.petrov",
       role: UserRole.USER,
+      phone: "+79000000002",
+      city: "Moscow",
       organizationId: org.id,
-      isActive: true
+      userTarif: 1250,
+      orgName: org.name,
+      orgEmail: org.email
     },
     create: {
-      maxUserId: "1001",
-      firstName: "Ivan",
-      lastName: "Petrov",
+      id: user1Id,
       fullName: "Ivan Petrov",
-      username: "ivan.petrov",
       role: UserRole.USER,
+      phone: "+79000000002",
+      city: "Moscow",
       organizationId: org.id,
-      isActive: true
+      userTarif: 1250,
+      orgName: org.name,
+      orgEmail: org.email
     }
   });
 
   await prisma.user.upsert({
-    where: { maxUserId: "1002" },
+    where: { id: user2Id },
     update: {
-      firstName: "Maria",
-      lastName: "Sidorova",
       fullName: "Maria Sidorova",
-      username: "maria.sidorova",
       role: UserRole.USER,
+      phone: "+79000000003",
+      city: "Moscow",
       organizationId: org.id,
-      isActive: true
+      userTarif: 1250,
+      orgName: org.name,
+      orgEmail: org.email
     },
     create: {
-      maxUserId: "1002",
-      firstName: "Maria",
-      lastName: "Sidorova",
+      id: user2Id,
       fullName: "Maria Sidorova",
-      username: "maria.sidorova",
       role: UserRole.USER,
+      phone: "+79000000003",
+      city: "Moscow",
       organizationId: org.id,
-      isActive: true
+      userTarif: 1250,
+      orgName: org.name,
+      orgEmail: org.email
     }
   });
 

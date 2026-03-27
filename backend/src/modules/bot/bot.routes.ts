@@ -11,13 +11,6 @@ import { knownUserUnexpectedMessage, unknownUserMessage } from "./bot.templates"
 const router = Router();
 const MAX_LOG_TEXT_LIMIT = 500;
 
-interface KnownBotUserRow {
-  userId: bigint;
-  orgBalance: number | null;
-  userTarif: number | null;
-  orgUserTarif: number | null;
-}
-
 function pickFirstNonEmpty(...candidates: unknown[]): string {
   for (const value of candidates) {
     const normalized = String(value ?? "").trim();
@@ -67,37 +60,15 @@ function formatIncomingLog(userId: string, text: string) {
   return `${now} - ${userId || "-"} - ${safeText || "-"}`;
 }
 
-function formatRemainingPackages(balance: number | null, userTarif: number | null, orgUserTarif: number | null) {
-  const tarif = userTarif ?? orgUserTarif;
-  if (balance == null || tarif == null || tarif <= 0) {
+function formatRemainingPackages(balance: number | null | undefined, userTarif: number | null | undefined) {
+  if (balance == null || userTarif == null || userTarif <= 0) {
     return "0";
   }
-  const value = balance / tarif;
+  const value = balance / userTarif;
   if (!Number.isFinite(value) || value < 0) {
     return "0";
   }
   return value.toFixed(1).replace(/\.0$/, "");
-}
-
-async function findKnownUserByMaxUserId(maxUserId: string): Promise<KnownBotUserRow | null> {
-  try {
-    const numericUserId = BigInt(maxUserId);
-    const rows = await prisma.$queryRaw<KnownBotUserRow[]>`
-      SELECT
-        u.user_id AS "userId",
-        o.balance AS "orgBalance",
-        u.user_tarif AS "userTarif",
-        o.user_tarif AS "orgUserTarif"
-      FROM users u
-      LEFT JOIN organizations o ON o.org_id = u.org_id
-      WHERE u.user_id = ${numericUserId}
-      LIMIT 1
-    `;
-
-    return rows[0] ?? null;
-  } catch {
-    return null;
-  }
 }
 
 router.post("/webhook/max", authRateLimit, async (req, res, next) => {
@@ -118,8 +89,10 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true, skipped: "WEBHOOK_USER_MISSING" });
     }
 
-    const knownUser = await findKnownUserByMaxUserId(event.userId);
-    if (!knownUser) {
+    let numericUserId: bigint;
+    try {
+      numericUserId = BigInt(event.userId);
+    } catch {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: unknownUserMessage(event.userId)
@@ -127,11 +100,21 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true });
     }
 
-    const remainingPackages = formatRemainingPackages(
-      knownUser.orgBalance,
-      knownUser.userTarif,
-      knownUser.orgUserTarif
-    );
+    const user = await prisma.user.findUnique({
+      where: { id: numericUserId },
+      include: { organization: true }
+    });
+
+    if (!user) {
+      await maxBotClient.sendMessage({
+        userId: event.userId,
+        text: unknownUserMessage(event.userId)
+      });
+      return res.json({ ok: true });
+    }
+
+    const tarif = user.userTarif ?? user.organization?.userTarif;
+    const remainingPackages = formatRemainingPackages(user.organization?.balance, tarif);
 
     await maxBotClient.sendMessage({
       userId: event.userId,
@@ -139,7 +122,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
     });
 
     await logAuditEvent({
-      actorUserId: knownUser.userId.toString(),
+      actorUserId: user.id,
       action: "bot.unexpected.message.reply.sent",
       entityType: "SYSTEM",
       meta: {

@@ -28,22 +28,3 @@ ALTER TABLE "files"
 
 ALTER TABLE "submission_billing_events"
   ALTER COLUMN "created_at" TYPE TIMESTAMPTZ(3) USING ("created_at" AT TIME ZONE 'UTC');
-
--- Enforce Europe/Moscow timezone defaults at DB and role level
-DO 
-BEGIN
-  EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), 'Europe/Moscow');
-EXCEPTION
-  WHEN insufficient_privilege THEN
-    RAISE NOTICE 'Skipping ALTER DATABASE timezone: insufficient privilege';
-END
-;
-
-DO 
-BEGIN
-  EXECUTE format('ALTER ROLE %I SET timezone TO %L', current_user, 'Europe/Moscow');
-EXCEPTION
-  WHEN insufficient_privilege THEN
-    RAISE NOTICE 'Skipping ALTER ROLE timezone: insufficient privilege';
-END
-;

@@ -1,4 +1,3 @@
-﻿import { SubmissionStatus } from "@prisma/client";
 import path from "path";
 import { Router } from "express";
 import { AppError } from "../../common/app-error";
@@ -11,6 +10,7 @@ import { getStorageProvider } from "../storage/storage.service";
 import {
   cancelAllUnfinishedSubmissions,
   cancelPendingSubmission,
+  confirmSubmission,
   getLatestPendingSubmission,
   getAwaitingPhotoSubmission,
   markSubmissionAwaitingPhoto
@@ -645,23 +645,10 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         }
       });
 
-      await prisma.meterSubmission.update({
-        where: { id: awaiting.id },
-        data: {
-          status: SubmissionStatus.CONFIRMED,
-          confirmedAt: new Date(),
-          awaitingPhoto: false
-        }
-      });
-
-      await prisma.submissionStatusHistory.create({
-        data: {
-          submissionId: awaiting.id,
-          oldStatus: SubmissionStatus.PENDING_CONFIRMATION,
-          newStatus: SubmissionStatus.CONFIRMED,
-          changedByUserId: numericUserId,
-          reason: "Confirmed with photo in bot."
-        }
+      await confirmSubmission({
+        submissionId: awaiting.id,
+        actorUserId: event.userId,
+        actorRole: "USER"
       });
 
       await logAuditEvent({

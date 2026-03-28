@@ -122,10 +122,10 @@ export async function confirmSubmission(input: {
   actorUserId: string;
   actorRole: UserRole;
 }) {
-  const submission = await prisma.meterSubmission.findUnique({
+  const current = await prisma.meterSubmission.findUnique({
     where: { id: input.submissionId }
   });
-  if (!submission) {
+  if (!current) {
     throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
   }
 
@@ -133,37 +133,110 @@ export async function confirmSubmission(input: {
 
   if (
     input.actorRole !== "ADMIN" &&
-    (submission.userId !== actorUserId || submission.status !== SubmissionStatus.PENDING_CONFIRMATION)
+    (current.userId !== actorUserId || current.status !== SubmissionStatus.PENDING_CONFIRMATION)
   ) {
     throw new AppError("Submission cannot be confirmed.", 403, "SUBMISSION_FORBIDDEN");
   }
-  if (submission.status === SubmissionStatus.CONFIRMED) {
-    return submission;
+  if (current.status === SubmissionStatus.CONFIRMED) {
+    return current;
   }
-  if (submission.status !== SubmissionStatus.PENDING_CONFIRMATION && input.actorRole !== "ADMIN") {
+  if (current.status !== SubmissionStatus.PENDING_CONFIRMATION && input.actorRole !== "ADMIN") {
     throw new AppError("Submission is not pending confirmation.", 409, "SUBMISSION_INVALID_STATUS");
   }
 
-  const updated = await prisma.meterSubmission.update({
-    where: { id: submission.id },
-    data: {
-      status: SubmissionStatus.CONFIRMED,
-      confirmedAt: new Date(),
-      awaitingPhoto: false
+  return prisma.$transaction(async (tx) => {
+    const submission = await tx.meterSubmission.findUnique({
+      where: { id: input.submissionId }
+    });
+    if (!submission) {
+      throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
     }
-  });
 
-  await prisma.submissionStatusHistory.create({
-    data: {
-      submissionId: submission.id,
-      oldStatus: submission.status,
-      newStatus: SubmissionStatus.CONFIRMED,
-      changedByUserId: actorUserId,
-      reason: "Confirmed by user."
+    if (submission.status === SubmissionStatus.CONFIRMED) {
+      return submission;
     }
-  });
 
-  return updated;
+    if (submission.status !== SubmissionStatus.PENDING_CONFIRMATION) {
+      throw new AppError("Submission is not pending confirmation.", 409, "SUBMISSION_INVALID_STATUS");
+    }
+
+    const confirmedAt = new Date();
+    const updateResult = await tx.meterSubmission.updateMany({
+      where: {
+        id: submission.id,
+        status: SubmissionStatus.PENDING_CONFIRMATION
+      },
+      data: {
+        status: SubmissionStatus.CONFIRMED,
+        confirmedAt,
+        awaitingPhoto: false
+      }
+    });
+
+    if (updateResult.count === 0) {
+      const latest = await tx.meterSubmission.findUnique({
+        where: { id: submission.id }
+      });
+      if (!latest) {
+        throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
+      }
+      return latest;
+    }
+
+    const organization = await tx.organization.findUnique({
+      where: { id: submission.organizationId },
+      select: {
+        id: true,
+        balance: true,
+        userTarif: true
+      }
+    });
+    if (!organization) {
+      throw new AppError("Organization not found.", 404, "ORG_NOT_FOUND");
+    }
+    if (organization.userTarif == null || !Number.isFinite(organization.userTarif) || organization.userTarif <= 0) {
+      throw new AppError("Organization tariff is not configured.", 409, "ORG_TARIF_NOT_CONFIGURED");
+    }
+
+    if (organization.balance == null) {
+      await tx.organization.update({
+        where: { id: organization.id },
+        data: { balance: 0 }
+      });
+    }
+
+    await tx.organization.update({
+      where: { id: organization.id },
+      data: {
+        balance: {
+          decrement: organization.userTarif
+        }
+      }
+    });
+
+    await tx.submissionStatusHistory.create({
+      data: {
+        submissionId: submission.id,
+        oldStatus: SubmissionStatus.PENDING_CONFIRMATION,
+        newStatus: SubmissionStatus.CONFIRMED,
+        changedByUserId: actorUserId,
+        reason: "Confirmed by user."
+      }
+    });
+
+    await tx.submissionBillingEvent.create({
+      data: {
+        userId: submission.userId,
+        organizationId: submission.organizationId,
+        submissionId: submission.id,
+        amount: organization.userTarif
+      }
+    });
+
+    return tx.meterSubmission.findUniqueOrThrow({
+      where: { id: submission.id }
+    });
+  });
 }
 
 export async function markSubmissionAwaitingPhoto(input: { submissionId: string; userId: string }) {

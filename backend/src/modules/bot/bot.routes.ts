@@ -13,10 +13,12 @@ import {
   confirmSubmission,
   getLatestPendingSubmission,
   getAwaitingPhotoSubmission,
-  markSubmissionAwaitingPhoto
+  markSubmissionAwaitingPhoto,
+  rejectSubmissionForInsufficientBalance
 } from "../submissions/submissions.service";
 import { maxBotClient } from "./max-bot.client";
 import {
+  insufficientBalanceMessage,
   knownUserUnexpectedMessage,
   noPendingSubmissionMessage,
   photoRequiredMessage,
@@ -645,11 +647,57 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         }
       });
 
-      await confirmSubmission({
-        submissionId: awaiting.id,
-        actorUserId: event.userId,
-        actorRole: "USER"
-      });
+      try {
+        await confirmSubmission({
+          submissionId: awaiting.id,
+          actorUserId: event.userId,
+          actorRole: "USER"
+        });
+      } catch (error) {
+        if (error instanceof AppError && error.code === "INSUFFICIENT_BALANCE") {
+          const files = await prisma.fileEntity.findMany({
+            where: { submissionId: awaiting.id },
+            select: { storageKey: true }
+          });
+          await prisma.fileEntity.deleteMany({
+            where: { submissionId: awaiting.id }
+          });
+
+          const storageKeys = Array.from(new Set([...files.map((item) => item.storageKey), stored.storageKey]));
+          for (const storageKey of storageKeys) {
+            try {
+              await storageProvider.deleteFile(storageKey);
+            } catch (deleteError) {
+              logger.warn({ err: deleteError, storageKey }, "Failed to delete file after insufficient balance");
+            }
+          }
+
+          await rejectSubmissionForInsufficientBalance({
+            submissionId: awaiting.id,
+            userId: event.userId
+          });
+
+          const freshProfile = await getUserProfilePayload(numericUserId);
+          const freshProfileText = freshProfile?.text ?? profile.text;
+
+          await logAuditEvent({
+            actorUserId: event.userId,
+            action: "bot.submission.rejected.insufficient_balance",
+            entityType: "SUBMISSION",
+            entityId: awaiting.id,
+            req
+          });
+
+          await maxBotClient.sendMessage({
+            userId: event.userId,
+            text: `${insufficientBalanceMessage()}\n\n${freshProfileText}`
+          });
+
+          return res.json({ ok: true, handled: "SUBMISSION_REJECTED_INSUFFICIENT_BALANCE" });
+        }
+
+        throw error;
+      }
 
       const freshProfile = await getUserProfilePayload(numericUserId);
       const freshProfileText = freshProfile?.text ?? profile.text;

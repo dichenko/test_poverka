@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import crypto from "crypto";
 import path from "path";
 import sharp from "sharp";
+import { SubmissionStatus } from "@prisma/client";
 import { prisma } from "./common/prisma";
 import { logger } from "./common/logger";
 import { env } from "./config/env";
@@ -44,6 +45,11 @@ async function getNextUnprocessedImage() {
       processingError: null,
       mimeType: {
         startsWith: IMAGE_MIME_PREFIX
+      },
+      submission: {
+        is: {
+          status: SubmissionStatus.CONFIRMED
+        }
       }
     },
     orderBy: {

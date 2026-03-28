@@ -1,6 +1,9 @@
-﻿import { SubmissionStatus, type UserRole, type WaterType } from "@prisma/client";
+import { SubmissionStatus, type UserRole, type WaterType } from "@prisma/client";
 import { AppError } from "../../common/app-error";
 import { prisma } from "../../common/prisma";
+
+const INSUFFICIENT_BALANCE_MESSAGE =
+  "Недостаточно средств на балансе организации. Отправка не выполнена. Пополните баланс и попробуйте снова.";
 
 function parseMeterValue(rawValue: string) {
   const normalized = rawValue.replace(",", ".");
@@ -9,6 +12,16 @@ function parseMeterValue(rawValue: string) {
     throw new AppError("Invalid meter value.", 400, "INVALID_METER_VALUE");
   }
   return normalized;
+}
+
+function ensureOrganizationCanSubmit(input: { balance: number | null | undefined; tarif: number | null | undefined }) {
+  if (input.tarif == null || !Number.isFinite(input.tarif) || input.tarif <= 0) {
+    throw new AppError("Тариф организации не настроен.", 409, "ORG_TARIF_NOT_CONFIGURED");
+  }
+  const balance = input.balance ?? 0;
+  if (!Number.isFinite(balance) || balance < input.tarif) {
+    throw new AppError(INSUFFICIENT_BALANCE_MESSAGE, 409, "INSUFFICIENT_BALANCE");
+  }
 }
 
 export function parseUserId(raw: string) {
@@ -46,6 +59,10 @@ export async function createDraftSubmission(input: {
   if (!equipmentType) {
     throw new AppError("Equipment type not found.", 400, "EQUIPMENT_TYPE_NOT_FOUND");
   }
+  ensureOrganizationCanSubmit({
+    balance: user.organization?.balance,
+    tarif: user.organization?.userTarif
+  });
 
   const currentValue = parseMeterValue(input.reading);
 
@@ -197,22 +214,27 @@ export async function confirmSubmission(input: {
     if (organization.userTarif == null || !Number.isFinite(organization.userTarif) || organization.userTarif <= 0) {
       throw new AppError("Organization tariff is not configured.", 409, "ORG_TARIF_NOT_CONFIGURED");
     }
-
-    if (organization.balance == null) {
-      await tx.organization.update({
-        where: { id: organization.id },
-        data: { balance: 0 }
-      });
+    const currentBalance = organization.balance ?? 0;
+    if (!Number.isFinite(currentBalance) || currentBalance < organization.userTarif) {
+      throw new AppError(INSUFFICIENT_BALANCE_MESSAGE, 409, "INSUFFICIENT_BALANCE");
     }
 
-    await tx.organization.update({
-      where: { id: organization.id },
+    const chargeResult = await tx.organization.updateMany({
+      where: {
+        id: organization.id,
+        balance: {
+          gte: organization.userTarif
+        }
+      },
       data: {
         balance: {
           decrement: organization.userTarif
         }
       }
     });
+    if (chargeResult.count === 0) {
+      throw new AppError(INSUFFICIENT_BALANCE_MESSAGE, 409, "INSUFFICIENT_BALANCE");
+    }
 
     await tx.submissionStatusHistory.create({
       data: {
@@ -232,6 +254,50 @@ export async function confirmSubmission(input: {
         amount: organization.userTarif
       }
     });
+
+    return tx.meterSubmission.findUniqueOrThrow({
+      where: { id: submission.id }
+    });
+  });
+}
+
+export async function rejectSubmissionForInsufficientBalance(input: { submissionId: string; userId: string }) {
+  const userId = parseUserId(input.userId);
+  const submission = await prisma.meterSubmission.findUnique({
+    where: { id: input.submissionId }
+  });
+  if (!submission || submission.userId !== userId) {
+    throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
+  }
+  if (submission.status !== SubmissionStatus.PENDING_CONFIRMATION) {
+    return submission;
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.meterSubmission.updateMany({
+      where: {
+        id: submission.id,
+        userId,
+        status: SubmissionStatus.PENDING_CONFIRMATION
+      },
+      data: {
+        status: SubmissionStatus.REJECTED,
+        rejectedAt: new Date(),
+        awaitingPhoto: false
+      }
+    });
+
+    if (updated.count > 0) {
+      await tx.submissionStatusHistory.create({
+        data: {
+          submissionId: submission.id,
+          oldStatus: SubmissionStatus.PENDING_CONFIRMATION,
+          newStatus: SubmissionStatus.REJECTED,
+          changedByUserId: userId,
+          reason: "Rejected: insufficient organization balance."
+        }
+      });
+    }
 
     return tx.meterSubmission.findUniqueOrThrow({
       where: { id: submission.id }

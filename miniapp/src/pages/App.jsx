@@ -53,6 +53,15 @@ function formatRemainingPackages(balance, tarif) {
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
+function hasEnoughBalance(balance, tarif) {
+  const b = Number(balance);
+  const t = Number(tarif);
+  if (!Number.isFinite(b) || !Number.isFinite(t) || t <= 0) {
+    return false;
+  }
+  return b >= t;
+}
+
 function formatDateTimeMsk(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) {
@@ -69,7 +78,7 @@ function formatDateTimeMsk(value) {
   }).format(date);
 }
 
-function UserPanel({ accessToken }) {
+function UserPanel({ accessToken, canSubmitInitially }) {
   const [form, setForm] = useState({
     address: "",
     phone: "",
@@ -138,6 +147,11 @@ function UserPanel({ accessToken }) {
   return (
     <div>
       <h3>Передача показаний</h3>
+      {!canSubmitInitially ? (
+        <div className="alert error">
+          Недостаточно средств на балансе организации. Отправка не выполнена. Пополните баланс и попробуйте снова.
+        </div>
+      ) : null}
       <form onSubmit={submitDraft}>
         <div className="field">
           <label htmlFor="address">Адрес</label>
@@ -231,7 +245,7 @@ function UserPanel({ accessToken }) {
             />
           </div>
         </div>
-        <button className="button" type="submit" disabled={loading}>
+        <button className="button" type="submit" disabled={loading || !canSubmitInitially}>
           {loading ? "Сохранение..." : "Создать заявку"}
         </button>
       </form>
@@ -520,6 +534,7 @@ function AdminPanel({ accessToken }) {
 export default function App() {
   const { loading, accessToken, user, maxUserId, error, errorCode } = useAuth();
   const packagesCount = formatRemainingPackages(user?.organizationBalance, user?.organizationTarif);
+  const canSubmitInitially = hasEnoughBalance(user?.organizationBalance, user?.organizationTarif);
 
   if (loading) {
     return <StatusScreen title="Загрузка" description="Выполняется авторизация через MAX WebApp..." />;
@@ -554,7 +569,11 @@ export default function App() {
         <h2>{user.organizationName || "Организация не указана"}</h2>
         <p>Пакеты: {packagesCount}</p>
         <p>{user.fullName}</p>
-        {user.role === "ADMIN" ? <AdminPanel accessToken={accessToken} /> : <UserPanel accessToken={accessToken} />}
+        {user.role === "ADMIN" ? (
+          <AdminPanel accessToken={accessToken} />
+        ) : (
+          <UserPanel accessToken={accessToken} canSubmitInitially={canSubmitInitially} />
+        )}
       </div>
     </div>
   );

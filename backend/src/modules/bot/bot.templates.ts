@@ -51,6 +51,10 @@ export function photoSavedAndConfirmedMessage() {
   return "Фотография получена. Заявка подтверждена и сохранена.";
 }
 
+export function insufficientBalanceMessage() {
+  return "Недостаточно средств на балансе организации. Отправка не выполнена. Пополните баланс и попробуйте снова.";
+}
+
 export function noPendingSubmissionMessage() {
   return "Нет заявок, ожидающих подтверждения.";
 }

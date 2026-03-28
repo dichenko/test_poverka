@@ -30,6 +30,12 @@ Use `.env.example` as template:
 cp .env.example .env
 ```
 
+Time zone for all services is controlled by:
+
+```bash
+APP_TIMEZONE=Europe/Moscow
+```
+
 ## Local/Server start
 
 ```bash

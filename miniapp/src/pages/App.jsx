@@ -53,6 +53,22 @@ function formatRemainingPackages(balance, tarif) {
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
+function formatDateTimeMsk(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).format(date);
+}
+
 function UserPanel({ accessToken }) {
   const [form, setForm] = useState({
     address: "",
@@ -440,7 +456,7 @@ function AdminPanel({ accessToken }) {
             <tbody>
               {submissions.map((item) => (
                 <tr key={item.id}>
-                  <td>{new Date(item.createdAt).toLocaleString()}</td>
+                  <td>{formatDateTimeMsk(item.createdAt)}</td>
                   <td>{item.user.fullName}</td>
                   <td>{item.organization.name}</td>
                   <td>{item.address || "-"}</td>
@@ -464,7 +480,7 @@ function AdminPanel({ accessToken }) {
               <strong>История статусов</strong>
               {history.map((entry) => (
                 <div key={entry.id}>
-                  {new Date(entry.createdAt).toLocaleString()} {entry.oldStatus || "-"} → {entry.newStatus}{" "}
+                  {formatDateTimeMsk(entry.createdAt)} {entry.oldStatus || "-"} → {entry.newStatus}{" "}
                   {entry.changedBy ? `(${entry.changedBy.fullName})` : ""}
                 </div>
               ))}
@@ -486,7 +502,7 @@ function AdminPanel({ accessToken }) {
           <tbody>
             {logs.map((log) => (
               <tr key={log.id}>
-                <td>{new Date(log.createdAt).toLocaleString()}</td>
+                <td>{formatDateTimeMsk(log.createdAt)}</td>
                 <td>{log.action}</td>
                 <td>
                   {log.entityType} {log.entityId || ""}

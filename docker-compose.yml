@@ -3,10 +3,13 @@ services:
     image: postgres:16-alpine
     container_name: poverka-bot-max-db
     restart: unless-stopped
+    command: postgres -c timezone=${APP_TIMEZONE:-Europe/Moscow}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-maxapp}
       POSTGRES_USER: ${POSTGRES_USER:-maxuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
@@ -28,6 +31,7 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-change_me}
+      TZ: ${APP_TIMEZONE:-Europe/Moscow}
     ports:
       - "127.0.0.1:5050:80"
     volumes:
@@ -42,6 +46,8 @@ services:
       db:
         condition: service_healthy
     environment:
+      TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
       PORT: ${PORT:-3000}
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}
@@ -89,6 +95,8 @@ services:
         condition: service_healthy
     command: ["node", "dist/photo-worker.js"]
     environment:
+      TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
       PORT: ${PORT:-3000}
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}
@@ -129,6 +137,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    environment:
+      TZ: ${APP_TIMEZONE:-Europe/Moscow}
     ports:
       - "127.0.0.1:8080:80"
     healthcheck:

@@ -651,6 +651,9 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         actorRole: "USER"
       });
 
+      const freshProfile = await getUserProfilePayload(numericUserId);
+      const freshProfileText = freshProfile?.text ?? profile.text;
+
       await logAuditEvent({
         actorUserId: event.userId,
         action: "bot.submission.photo.saved",
@@ -662,7 +665,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
 
       await maxBotClient.sendMessage({
         userId: event.userId,
-        text: `${photoSavedAndConfirmedMessage()}\n\n${profile.text}`
+        text: `${photoSavedAndConfirmedMessage()}\n\n${freshProfileText}`
       });
 
       return res.json({ ok: true, handled: "SUBMISSION_CONFIRMED_WITH_PHOTO" });

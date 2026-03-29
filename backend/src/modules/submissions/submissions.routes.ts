@@ -5,6 +5,7 @@ import { requireAuth } from "../../middlewares/auth";
 import { logAuditEvent } from "../../services/audit.service";
 import { maxBotClient } from "../bot/max-bot.client";
 import { submissionReviewMessage } from "../bot/bot.templates";
+import { assertNoActiveTopupForUser } from "../payments/topups.service";
 import {
   confirmSubmissionParamsSchema,
   createDraftSubmissionSchema,
@@ -48,6 +49,7 @@ function reviewKeyboard(submissionId: string) {
 
 router.get("/submissions/equipment-types", async (_req, res, next) => {
   try {
+    await assertNoActiveTopupForUser(_req.auth!.userId);
     const equipmentTypes = await listEquipmentTypes();
     return res.json({
       ok: true,
@@ -63,6 +65,7 @@ router.get("/submissions/equipment-types", async (_req, res, next) => {
 
 router.get("/submissions/pending/latest", async (req, res, next) => {
   try {
+    await assertNoActiveTopupForUser(req.auth!.userId);
     const submission = await getLatestPendingSubmission(req.auth!.userId);
     return res.json({
       ok: true,
@@ -89,6 +92,7 @@ router.get("/submissions/pending/latest", async (req, res, next) => {
 
 router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (req, res, next) => {
   try {
+    await assertNoActiveTopupForUser(req.auth!.userId);
     const submission = await createDraftSubmission({
       userId: req.auth!.userId,
       address: req.body.address,
@@ -158,6 +162,7 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
 
 router.post("/submissions/:id/confirm", validate(confirmSubmissionParamsSchema, "params"), async (req, res, next) => {
   try {
+    await assertNoActiveTopupForUser(req.auth!.userId);
     const params = confirmSubmissionParamsSchema.parse(req.params);
     const submission = await confirmSubmission({
       submissionId: params.id,

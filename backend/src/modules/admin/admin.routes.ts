@@ -33,7 +33,9 @@ router.get("/admin/organizations", async (_req, res, next) => {
         email: org.email,
         balance: org.balance,
         balanceStartOfDay: org.balanceStartOfDay,
-        userTarif: org.userTarif
+        userTarif: org.userTarif,
+        balanceKopecks: org.balanceKopecks.toString(),
+        tariffPerPackageKopecks: org.tariffPerPackageKopecks.toString()
       }))
     });
   } catch (error) {
@@ -56,7 +58,9 @@ router.patch(
           email: body.email ?? undefined,
           balance: body.balance ?? undefined,
           balanceStartOfDay: body.balanceStartOfDay ?? undefined,
-          userTarif: body.userTarif ?? undefined
+          userTarif: body.userTarif ?? undefined,
+          balanceKopecks: body.balanceKopecks ?? undefined,
+          tariffPerPackageKopecks: body.tariffPerPackageKopecks ?? undefined
         }
       });
 
@@ -77,7 +81,9 @@ router.patch(
           email: organization.email,
           balance: organization.balance,
           balanceStartOfDay: organization.balanceStartOfDay,
-          userTarif: organization.userTarif
+          userTarif: organization.userTarif,
+          balanceKopecks: organization.balanceKopecks.toString(),
+          tariffPerPackageKopecks: organization.tariffPerPackageKopecks.toString()
         }
       });
     } catch (error) {

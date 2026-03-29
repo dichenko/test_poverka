@@ -17,6 +17,7 @@ async function parseResponse(response) {
     const code = data?.error?.code || "REQUEST_ERROR";
     const error = new Error(message);
     error.code = code;
+    error.details = data?.error?.details;
     throw error;
   }
   return data;

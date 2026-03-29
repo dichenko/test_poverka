@@ -1,9 +1,10 @@
 import { SubmissionStatus, type UserRole, type WaterType } from "@prisma/client";
 import { AppError } from "../../common/app-error";
 import { prisma } from "../../common/prisma";
+import { legacyRublesToKopecks } from "../payments/money";
 
 const INSUFFICIENT_BALANCE_MESSAGE =
-  "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ СЃСЂРµРґСЃС‚РІ РЅР° Р±Р°Р»Р°РЅСЃРµ РѕСЂРіР°РЅРёР·Р°С†РёРё. РћС‚РїСЂР°РІРєР° РЅРµ РІС‹РїРѕР»РЅРµРЅР°. РџРѕРїРѕР»РЅРёС‚Рµ Р±Р°Р»Р°РЅСЃ Рё РїРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР°.";
+  "Недостаточно средств на балансе организации. Отправка не выполнена. Пополните баланс и попробуйте снова.";
 
 function parseMeterValue(rawValue: string) {
   const normalized = rawValue.replace(",", ".");
@@ -14,14 +15,59 @@ function parseMeterValue(rawValue: string) {
   return normalized;
 }
 
-function ensureOrganizationCanSubmit(input: { balance: number | null | undefined; tarif: number | null | undefined }) {
-  if (input.tarif == null || !Number.isFinite(input.tarif) || input.tarif <= 0) {
-    throw new AppError("РўР°СЂРёС„ РѕСЂРіР°РЅРёР·Р°С†РёРё РЅРµ РЅР°СЃС‚СЂРѕРµРЅ.", 409, "ORG_TARIF_NOT_CONFIGURED");
+function resolveTariffKopecks(input: {
+  tariffPerPackageKopecks: bigint;
+  userTarifLegacy: number | null;
+}): bigint {
+  if (input.tariffPerPackageKopecks > 0n) {
+    return input.tariffPerPackageKopecks;
   }
-  const balance = input.balance ?? 0;
-  if (!Number.isFinite(balance) || balance < input.tarif) {
+
+  if (input.userTarifLegacy != null && Number.isFinite(input.userTarifLegacy) && input.userTarifLegacy > 0) {
+    return legacyRublesToKopecks(input.userTarifLegacy);
+  }
+
+  return 0n;
+}
+
+function resolveBalanceKopecks(input: {
+  balanceKopecks: bigint;
+  balanceLegacy: number | null;
+}) {
+  if (input.balanceKopecks > 0n) {
+    return input.balanceKopecks;
+  }
+  return legacyRublesToKopecks(input.balanceLegacy);
+}
+
+function ensureOrganizationCanSubmit(input: {
+  balanceKopecks: bigint;
+  tariffPerPackageKopecks: bigint;
+  tariffLegacy: number | null;
+  balanceLegacy: number | null;
+}) {
+  const tariffKopecks = resolveTariffKopecks({
+    tariffPerPackageKopecks: input.tariffPerPackageKopecks,
+    userTarifLegacy: input.tariffLegacy
+  });
+
+  if (tariffKopecks <= 0n) {
+    throw new AppError("Тариф организации не настроен.", 409, "ORG_TARIF_NOT_CONFIGURED");
+  }
+
+  const balanceKopecks = resolveBalanceKopecks({
+    balanceKopecks: input.balanceKopecks,
+    balanceLegacy: input.balanceLegacy
+  });
+
+  if (balanceKopecks < tariffKopecks) {
     throw new AppError(INSUFFICIENT_BALANCE_MESSAGE, 409, "INSUFFICIENT_BALANCE");
   }
+
+  return {
+    balanceKopecks,
+    tariffKopecks
+  };
 }
 
 export function parseUserId(raw: string) {
@@ -46,10 +92,11 @@ export async function createDraftSubmission(input: {
     where: { id: parseUserId(input.userId) },
     include: { organization: true }
   });
+
   if (!user) {
     throw new AppError("User is missing.", 403, "USER_NOT_FOUND");
   }
-  if (!user.organizationId) {
+  if (!user.organizationId || !user.organization) {
     throw new AppError("Organization is required for submission.", 403, "ORG_REQUIRED");
   }
 
@@ -59,9 +106,12 @@ export async function createDraftSubmission(input: {
   if (!equipmentType) {
     throw new AppError("Equipment type not found.", 400, "EQUIPMENT_TYPE_NOT_FOUND");
   }
+
   ensureOrganizationCanSubmit({
-    balance: user.organization?.balance,
-    tarif: user.organization?.userTarif
+    balanceKopecks: user.organization.balanceKopecks,
+    tariffPerPackageKopecks: user.organization.tariffPerPackageKopecks,
+    tariffLegacy: user.organization.userTarif,
+    balanceLegacy: user.organization.balance
   });
 
   const currentValue = parseMeterValue(input.reading);
@@ -154,17 +204,17 @@ export async function confirmSubmission(input: {
   ) {
     throw new AppError("Submission cannot be confirmed.", 403, "SUBMISSION_FORBIDDEN");
   }
+
   if (current.status === SubmissionStatus.CONFIRMED) {
     return current;
   }
+
   if (current.status !== SubmissionStatus.PENDING_CONFIRMATION && input.actorRole !== "ADMIN") {
     throw new AppError("Submission is not pending confirmation.", 409, "SUBMISSION_INVALID_STATUS");
   }
 
   return prisma.$transaction(async (tx) => {
-    const submission = await tx.meterSubmission.findUnique({
-      where: { id: input.submissionId }
-    });
+    const submission = await tx.meterSubmission.findUnique({ where: { id: input.submissionId } });
     if (!submission) {
       throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
     }
@@ -191,50 +241,62 @@ export async function confirmSubmission(input: {
     });
 
     if (updateResult.count === 0) {
-      const latest = await tx.meterSubmission.findUnique({
-        where: { id: submission.id }
-      });
+      const latest = await tx.meterSubmission.findUnique({ where: { id: submission.id } });
       if (!latest) {
         throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
       }
       return latest;
     }
 
-    const organization = await tx.organization.findUnique({
-      where: { id: submission.organizationId },
-      select: {
-        id: true,
-        balance: true,
-        userTarif: true
-      }
-    });
+    const orgRows = await tx.$queryRaw<
+      Array<{
+        org_id: bigint;
+        balance_kopecks: bigint;
+        tariff_per_package_kopecks: bigint;
+        balance: number | null;
+        user_tarif: number | null;
+      }>
+    >`
+      SELECT org_id, balance_kopecks, tariff_per_package_kopecks, balance, user_tarif
+      FROM organizations
+      WHERE org_id = ${submission.organizationId}
+      FOR UPDATE
+    `;
+
+    const organization = orgRows[0];
     if (!organization) {
       throw new AppError("Organization not found.", 404, "ORG_NOT_FOUND");
     }
-    if (organization.userTarif == null || !Number.isFinite(organization.userTarif) || organization.userTarif <= 0) {
-      throw new AppError("Organization tariff is not configured.", 409, "ORG_TARIF_NOT_CONFIGURED");
-    }
-    const currentBalance = organization.balance ?? 0;
-    if (!Number.isFinite(currentBalance) || currentBalance < organization.userTarif) {
-      throw new AppError(INSUFFICIENT_BALANCE_MESSAGE, 409, "INSUFFICIENT_BALANCE");
-    }
 
-    const chargeResult = await tx.organization.updateMany({
-      where: {
-        id: organization.id,
-        balance: {
-          gte: organization.userTarif
-        }
-      },
+    const { balanceKopecks, tariffKopecks } = ensureOrganizationCanSubmit({
+      balanceKopecks: BigInt(organization.balance_kopecks),
+      tariffPerPackageKopecks: BigInt(organization.tariff_per_package_kopecks),
+      tariffLegacy: organization.user_tarif,
+      balanceLegacy: organization.balance
+    });
+
+    const balanceAfterKopecks = balanceKopecks - tariffKopecks;
+
+    await tx.organization.update({
+      where: { id: submission.organizationId },
       data: {
-        balance: {
-          decrement: organization.userTarif
-        }
+        balanceKopecks: balanceAfterKopecks
       }
     });
-    if (chargeResult.count === 0) {
-      throw new AppError(INSUFFICIENT_BALANCE_MESSAGE, 409, "INSUFFICIENT_BALANCE");
-    }
+
+    await tx.organizationBalanceTransaction.create({
+      data: {
+        organizationId: submission.organizationId,
+        direction: "debit",
+        amountKopecks: tariffKopecks,
+        balanceBeforeKopecks: balanceKopecks,
+        balanceAfterKopecks,
+        sourceType: "action_spend",
+        sourceId: submission.id,
+        createdByUserId: actorUserId,
+        comment: "Submission confirmation charge"
+      }
+    });
 
     await tx.submissionStatusHistory.create({
       data: {
@@ -251,7 +313,7 @@ export async function confirmSubmission(input: {
         userId: submission.userId,
         organizationId: submission.organizationId,
         submissionId: submission.id,
-        amount: organization.userTarif
+        amountKopecks: tariffKopecks
       }
     });
 

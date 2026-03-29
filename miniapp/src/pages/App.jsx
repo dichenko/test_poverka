@@ -40,7 +40,29 @@ function StatusScreen({ title, description, code }) {
   );
 }
 
-function formatRemainingPackages(balance, tarif) {
+function parseKopecks(raw) {
+  if (raw == null || raw === "") {
+    return null;
+  }
+  try {
+    const parsed = BigInt(raw);
+    return parsed >= 0n ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatRemainingPackages(balance, tarif, balanceKopecks, tariffKopecks) {
+  const bKopecks = parseKopecks(balanceKopecks);
+  const tKopecks = parseKopecks(tariffKopecks);
+  if (bKopecks != null && tKopecks != null && tKopecks > 0n) {
+    const value = Number(bKopecks) / Number(tKopecks);
+    if (!Number.isFinite(value) || value < 0) {
+      return "-";
+    }
+    return value.toFixed(1).replace(/\.0$/, "");
+  }
+
   const b = Number(balance);
   const t = Number(tarif);
   if (!Number.isFinite(b) || !Number.isFinite(t) || t <= 0) {
@@ -53,7 +75,13 @@ function formatRemainingPackages(balance, tarif) {
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
-function hasEnoughBalance(balance, tarif) {
+function hasEnoughBalance(balance, tarif, balanceKopecks, tariffKopecks) {
+  const bKopecks = parseKopecks(balanceKopecks);
+  const tKopecks = parseKopecks(tariffKopecks);
+  if (bKopecks != null && tKopecks != null && tKopecks > 0n) {
+    return bKopecks >= tKopecks;
+  }
+
   const b = Number(balance);
   const t = Number(tarif);
   if (!Number.isFinite(b) || !Number.isFinite(t) || t <= 0) {
@@ -92,26 +120,43 @@ function UserPanel({ accessToken, canSubmitInitially }) {
   const [error, setError] = useState("");
   const [savedNotice, setSavedNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [activeTopupMessage, setActiveTopupMessage] = useState("");
 
   async function loadEquipment() {
-    const data = await listEquipmentTypes(accessToken);
-    setEquipmentTypes(data.equipmentTypes || []);
+    try {
+      const data = await listEquipmentTypes(accessToken);
+      setEquipmentTypes(data.equipmentTypes || []);
+    } catch (err) {
+      if (err.code === "ACTIVE_TOPUP_PENDING") {
+        setActiveTopupMessage(err.message || "У вас есть активное пополнение.");
+        return;
+      }
+      throw err;
+    }
   }
 
   async function loadLatestPending() {
-    const data = await getLatestPendingSubmission(accessToken);
-    if (!data.submission) {
-      return;
+    try {
+      const data = await getLatestPendingSubmission(accessToken);
+      if (!data.submission) {
+        return;
+      }
+      setForm({
+        address: data.submission.address || "",
+        phone: data.submission.phone || "",
+        waterType: data.submission.waterType || "HVS",
+        equipmentTypeId: data.submission.equipmentTypeId ? String(data.submission.equipmentTypeId) : "",
+        factoryNumber: data.submission.factoryNumber || "",
+        productionYear: data.submission.productionYear ? String(data.submission.productionYear) : "",
+        reading: data.submission.reading || ""
+      });
+    } catch (err) {
+      if (err.code === "ACTIVE_TOPUP_PENDING") {
+        setActiveTopupMessage(err.message || "У вас есть активное пополнение.");
+        return;
+      }
+      throw err;
     }
-    setForm({
-      address: data.submission.address || "",
-      phone: data.submission.phone || "",
-      waterType: data.submission.waterType || "HVS",
-      equipmentTypeId: data.submission.equipmentTypeId ? String(data.submission.equipmentTypeId) : "",
-      factoryNumber: data.submission.factoryNumber || "",
-      productionYear: data.submission.productionYear ? String(data.submission.productionYear) : "",
-      reading: data.submission.reading || ""
-    });
   }
 
   async function submitDraft(event) {
@@ -130,9 +175,13 @@ function UserPanel({ accessToken, canSubmitInitially }) {
         equipmentTypeId: Number(parsed.data.equipmentTypeId)
       };
       await createDraftSubmission(payload, accessToken);
+      setActiveTopupMessage("");
       setSavedNotice("Заявка отправлена в бот. Подтвердите ее с фото или отмените в сообщении.");
       setTimeout(() => closeWebApp(), 250);
     } catch (err) {
+      if (err.code === "ACTIVE_TOPUP_PENDING") {
+        setActiveTopupMessage(err.message || "У вас есть активное пополнение.");
+      }
       setError(err.message || "Не удалось создать черновик");
     } finally {
       setLoading(false);
@@ -140,8 +189,16 @@ function UserPanel({ accessToken, canSubmitInitially }) {
   }
 
   useEffect(() => {
-    void loadEquipment();
-    void loadLatestPending();
+    async function run() {
+      try {
+        await loadEquipment();
+        await loadLatestPending();
+      } catch (err) {
+        setError(err.message || "Не удалось загрузить данные формы");
+      }
+    }
+
+    void run();
   }, []);
 
   return (
@@ -152,6 +209,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
           Недостаточно средств на балансе организации. Отправка не выполнена. Пополните баланс и попробуйте снова.
         </div>
       ) : null}
+      {activeTopupMessage ? <div className="alert error">{activeTopupMessage}</div> : null}
       <form onSubmit={submitDraft}>
         <div className="field">
           <label htmlFor="address">Адрес</label>
@@ -245,7 +303,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
             />
           </div>
         </div>
-        <button className="button" type="submit" disabled={loading || !canSubmitInitially}>
+        <button className="button" type="submit" disabled={loading || !canSubmitInitially || Boolean(activeTopupMessage)}>
           {loading ? "Сохранение..." : "Создать заявку"}
         </button>
       </form>
@@ -533,8 +591,18 @@ function AdminPanel({ accessToken }) {
 
 export default function App() {
   const { loading, accessToken, user, maxUserId, error, errorCode } = useAuth();
-  const packagesCount = formatRemainingPackages(user?.organizationBalance, user?.organizationTarif);
-  const canSubmitInitially = hasEnoughBalance(user?.organizationBalance, user?.organizationTarif);
+  const packagesCount = formatRemainingPackages(
+    user?.organizationBalance,
+    user?.organizationTarif,
+    user?.organizationBalanceKopecks,
+    user?.organizationTariffPerPackageKopecks
+  );
+  const canSubmitInitially = hasEnoughBalance(
+    user?.organizationBalance,
+    user?.organizationTarif,
+    user?.organizationBalanceKopecks,
+    user?.organizationTariffPerPackageKopecks
+  );
 
   if (loading) {
     return <StatusScreen title="Загрузка" description="Выполняется авторизация через MAX WebApp..." />;

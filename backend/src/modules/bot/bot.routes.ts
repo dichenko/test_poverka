@@ -6,24 +6,37 @@ import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
 import { authRateLimit } from "../../middlewares/rate-limit";
 import { logAuditEvent } from "../../services/audit.service";
+import {
+  createOrReuseTopupForUser,
+  getActiveTopupForUser,
+  getActiveTopupUserMessage,
+  getTopupPaymentLinkMessage,
+  parsePackagesCountFromText
+} from "../payments/topups.service";
 import { getStorageProvider } from "../storage/storage.service";
 import {
   cancelAllUnfinishedSubmissions,
   cancelPendingSubmission,
   confirmSubmission,
-  getLatestPendingSubmission,
   getAwaitingPhotoSubmission,
+  getLatestPendingSubmission,
   markSubmissionAwaitingPhoto,
   rejectSubmissionForInsufficientBalance
 } from "../submissions/submissions.service";
+import {
+  BOT_STATE_AWAITING_TOPUP_PACKAGES,
+  clearBotUserState,
+  getBotUserState,
+  setBotUserState
+} from "./bot-state.service";
 import { maxBotClient } from "./max-bot.client";
+import { getUserProfilePayload } from "./profile.service";
 import {
   insufficientBalanceMessage,
   knownUserUnexpectedMessage,
   noPendingSubmissionMessage,
   photoRequiredMessage,
   photoSavedAndConfirmedMessage,
-  profileMessage,
   submissionCancelledMessage,
   unknownUserMessage
 } from "./bot.templates";
@@ -31,7 +44,9 @@ import {
 const router = Router();
 const MAX_LOG_TEXT_LIMIT = 500;
 
-function pickFirstNonEmpty(...candidates: unknown[]): string {
+type EventActionKind = "confirm" | "cancel" | "topup" | "none";
+
+function pickFirstNonEmpty(...candidates: unknown[]) {
   for (const value of candidates) {
     const normalized = String(value ?? "").trim();
     if (normalized) {
@@ -60,6 +75,7 @@ function extractEvent(body: any) {
     body?.callback?.user_id,
     body?.callback?.sender?.user_id
   );
+
   const text = pickFirstNonEmpty(
     body?.text,
     body?.message?.text,
@@ -68,18 +84,21 @@ function extractEvent(body: any) {
     body?.payload?.text,
     body?.payload?.message?.text
   );
+
   const callbackPayload = pickFirstNonEmpty(
     body?.callback?.payload,
     body?.payload?.callback?.payload,
     body?.message?.callback?.payload,
     body?.payload
   );
+
   const callbackId = pickFirstNonEmpty(
     body?.callback?.callback_id,
     body?.payload?.callback?.callback_id,
     body?.message?.callback?.callback_id,
     body?.callback_id
   );
+
   const messageId = pickFirstNonEmpty(
     body?.message?.body?.mid,
     body?.message?.mid,
@@ -104,15 +123,9 @@ function formatIncomingLog(userId: string, text: string) {
   return `${now} - ${userId || "-"} - ${safeText || "-"}`;
 }
 
-function formatRemainingPackages(balance: number | null | undefined, userTarif: number | null | undefined) {
-  if (balance == null || userTarif == null || userTarif <= 0) {
-    return "0";
-  }
-  const value = balance / userTarif;
-  if (!Number.isFinite(value) || value < 0) {
-    return "0";
-  }
-  return value.toFixed(1).replace(/\.0$/, "");
+function isStartCommand(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return /^\/start(?:@\w+)?(?:\s|$)/i.test(normalized);
 }
 
 function cancelKeyboard(submissionId: string) {
@@ -124,7 +137,7 @@ function cancelKeyboard(submissionId: string) {
           [
             {
               type: "message",
-              text: "РћС‚РјРµРЅРёС‚СЊ",
+              text: "Отменить",
               payload: `cancel_submission:${submissionId}`
             }
           ]
@@ -149,6 +162,7 @@ function collectAttachments(body: any): any[] {
       return candidate;
     }
   }
+
   return [];
 }
 
@@ -156,33 +170,34 @@ function extractUrlsDeep(node: any, out: string[] = []): string[] {
   if (!node) {
     return out;
   }
+
   if (typeof node === "string") {
     if (/^https?:\/\//i.test(node)) {
       out.push(node);
     }
     return out;
   }
+
   if (Array.isArray(node)) {
     for (const item of node) {
       extractUrlsDeep(item, out);
     }
     return out;
   }
+
   if (typeof node === "object") {
     for (const value of Object.values(node)) {
       extractUrlsDeep(value, out);
     }
   }
+
   return out;
 }
 
-function pickImageUrl(attachments: any[]): string {
+function pickImageUrl(attachments: any[]) {
   const urls = extractUrlsDeep(attachments, []);
   const preferred = urls.find((item) => /\.(jpg|jpeg|png|webp)(\?|$)/i.test(item));
-  if (preferred) {
-    return preferred;
-  }
-  return urls[0] || "";
+  return preferred || urls[0] || "";
 }
 
 async function downloadPhoto(url: string) {
@@ -217,52 +232,38 @@ async function downloadPhoto(url: string) {
   };
 }
 
-async function getUserProfilePayload(userId: bigint) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: { organization: true }
-  });
-  if (!user) {
-    return null;
-  }
-
-  const tarif = user.userTarif ?? user.organization?.userTarif;
-  const remainingPackages = formatRemainingPackages(user.organization?.balance, tarif);
-
-  return {
-    user,
-    remainingPackages,
-    text: profileMessage({
-      maxUserId: user.id.toString(),
-      fullName: user.fullName,
-      organizationName: user.organization?.name ?? null,
-      remainingPackages
-    })
-  };
-}
-
-function parseActionToken(value: string) {
+function parseActionToken(value: string): { kind: EventActionKind; submissionId: string } {
   if (!value) {
-    return { kind: "none", submissionId: "" } as const;
+    return { kind: "none", submissionId: "" };
   }
+
   const normalized = value.trim();
   const lowered = normalized.toLowerCase();
-  if (lowered === "РїРѕРґС‚РІРµСЂРґРёС‚СЊ" || lowered === "confirm") {
-    return { kind: "confirm", submissionId: "" } as const;
+
+  if (lowered === "пополнить баланс" || lowered === "topup_balance") {
+    return { kind: "topup", submissionId: "" };
   }
-  if (lowered === "РѕС‚РјРµРЅРёС‚СЊ" || lowered === "cancel") {
-    return { kind: "cancel", submissionId: "" } as const;
+
+  if (lowered === "подтвердить" || lowered === "confirm") {
+    return { kind: "confirm", submissionId: "" };
   }
+
+  if (lowered === "отменить" || lowered === "cancel") {
+    return { kind: "cancel", submissionId: "" };
+  }
+
   if (normalized.startsWith("confirm_submission:")) {
-    return { kind: "confirm", submissionId: normalized.slice("confirm_submission:".length).trim() } as const;
+    return { kind: "confirm", submissionId: normalized.slice("confirm_submission:".length).trim() };
   }
+
   if (normalized.startsWith("cancel_submission:")) {
-    return { kind: "cancel", submissionId: normalized.slice("cancel_submission:".length).trim() } as const;
+    return { kind: "cancel", submissionId: normalized.slice("cancel_submission:".length).trim() };
   }
-  return { kind: "none", submissionId: "" } as const;
+
+  return { kind: "none", submissionId: "" };
 }
 
-function parseActionTokenFromUnknown(value: unknown, depth = 0): { kind: "confirm" | "cancel" | "none"; submissionId: string } {
+function parseActionTokenFromUnknown(value: unknown, depth = 0): { kind: EventActionKind; submissionId: string } {
   if (depth > 8 || value == null) {
     return { kind: "none", submissionId: "" };
   }
@@ -274,10 +275,7 @@ function parseActionTokenFromUnknown(value: unknown, depth = 0): { kind: "confir
     }
 
     const trimmed = value.trim();
-    if (
-      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-      (trimmed.startsWith("[") && trimmed.endsWith("]"))
-    ) {
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
       try {
         const parsed = JSON.parse(trimmed);
         return parseActionTokenFromUnknown(parsed, depth + 1);
@@ -300,17 +298,7 @@ function parseActionTokenFromUnknown(value: unknown, depth = 0): { kind: "confir
   }
 
   if (typeof value === "object") {
-    const candidateKeys = [
-      "payload",
-      "text",
-      "data",
-      "command",
-      "action",
-      "value",
-      "callback",
-      "callback_data",
-      "message"
-    ];
+    const candidateKeys = ["payload", "text", "data", "command", "action", "value", "callback", "callback_data", "message"];
     for (const key of candidateKeys) {
       const nested = (value as Record<string, unknown>)[key];
       if (nested == null) {
@@ -358,9 +346,25 @@ async function resolveActionSubmissionId(userId: string, explicitSubmissionId: s
   return pending?.id ?? "";
 }
 
-function isStartCommand(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return /^\/start(?:@\w+)?(?:\s|$)/i.test(normalized);
+async function sendProfileMessage(userId: bigint, fallbackUserIdText?: string) {
+  const profile = await getUserProfilePayload(userId);
+  if (!profile) {
+    if (fallbackUserIdText) {
+      await maxBotClient.sendMessage({
+        userId: fallbackUserIdText,
+        text: unknownUserMessage(fallbackUserIdText)
+      });
+    }
+    return null;
+  }
+
+  await maxBotClient.sendMessage({
+    userId: userId.toString(),
+    text: profile.text,
+    attachments: profile.attachments
+  });
+
+  return profile;
 }
 
 async function handleConfirmAction(input: {
@@ -391,7 +395,7 @@ async function handleConfirmAction(input: {
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
-      notification: "РџСЂРёРєСЂРµРїРёС‚Рµ С„РѕС‚РѕРіСЂР°С„РёСЋ СЃС‡РµС‚С‡РёРєР°"
+      notification: "Прикрепите фотографию счетчика"
     });
   }
 }
@@ -399,9 +403,9 @@ async function handleConfirmAction(input: {
 async function handleCancelAction(input: {
   submissionId: string;
   userId: string;
+  numericUserId: bigint;
   callbackId?: string;
   req: any;
-  profileText: string;
 }) {
   const cancelled = await cancelPendingSubmission({
     submissionId: input.submissionId,
@@ -427,21 +431,21 @@ async function handleCancelAction(input: {
 
   await maxBotClient.sendMessage({
     userId: input.userId,
-    text: `${submissionCancelledMessage()}\n\n${input.profileText}`
+    text: submissionCancelledMessage()
   });
+
+  await sendProfileMessage(input.numericUserId, input.userId);
 
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
-      notification: "Р—Р°СЏРІРєР° РѕС‚РјРµРЅРµРЅР°"
+      notification: "Заявка отменена"
     });
   }
 }
 
-async function handleStartCommand(input: { userId: string; req: any; profileText: string }) {
-  const cancelled = await cancelAllUnfinishedSubmissions({
-    userId: input.userId
-  });
+async function handleStartCommand(input: { userId: string; numericUserId: bigint; req: any }) {
+  const cancelled = await cancelAllUnfinishedSubmissions({ userId: input.userId });
 
   const storageProvider = getStorageProvider();
   for (const storageKey of cancelled.storageKeys) {
@@ -464,13 +468,80 @@ async function handleStartCommand(input: { userId: string; req: any; profileText
 
   const prefix =
     cancelled.cancelledCount > 0
-      ? `РљРѕРјР°РЅРґР° /start РІС‹РїРѕР»РЅРµРЅР°. РћС‚РјРµРЅРµРЅРѕ РЅРµР·Р°РІРµСЂС€РµРЅРЅС‹С… Р·Р°СЏРІРѕРє: ${cancelled.cancelledCount}.`
-      : "РљРѕРјР°РЅРґР° /start РІС‹РїРѕР»РЅРµРЅР°. РќРµР·Р°РІРµСЂС€РµРЅРЅС‹С… Р·Р°СЏРІРѕРє РЅРµ РЅР°Р№РґРµРЅРѕ.";
+      ? `Команда /start выполнена. Отменено незавершенных заявок: ${cancelled.cancelledCount}.`
+      : "Команда /start выполнена. Незавершенных заявок не найдено.";
 
   await maxBotClient.sendMessage({
     userId: input.userId,
-    text: `${prefix}\n\n${input.profileText}`
+    text: prefix
   });
+
+  await sendProfileMessage(input.numericUserId, input.userId);
+}
+
+async function handleTopupAction(input: { userId: string; numericUserId: bigint; callbackId?: string }) {
+  const activeTopup = await getActiveTopupForUser(input.numericUserId);
+  if (activeTopup) {
+    await maxBotClient.sendMessage({
+      userId: input.userId,
+      text: getActiveTopupUserMessage(activeTopup)
+    });
+
+    if (input.callbackId) {
+      await maxBotClient.answerCallback({
+        callbackId: input.callbackId,
+        notification: "Есть активное пополнение"
+      });
+    }
+    return;
+  }
+
+  await setBotUserState(input.numericUserId, BOT_STATE_AWAITING_TOPUP_PACKAGES);
+  await maxBotClient.sendMessage({
+    userId: input.userId,
+    text: "Сколько пакетов хотите купить?"
+  });
+
+  if (input.callbackId) {
+    await maxBotClient.answerCallback({
+      callbackId: input.callbackId,
+      notification: "Введите количество пакетов"
+    });
+  }
+}
+
+async function handleTopupPackagesInput(input: { userId: string; numericUserId: bigint; text: string }) {
+  const packagesCount = parsePackagesCountFromText(input.text);
+  if (packagesCount == null) {
+    await maxBotClient.sendMessage({
+      userId: input.userId,
+      text: `Введите целое число пакетов от ${env.PAYMENT_MIN_PACKAGES_PER_TOPUP} до ${env.PAYMENT_MAX_PACKAGES_PER_TOPUP}.`
+    });
+    return;
+  }
+
+  try {
+    const created = await createOrReuseTopupForUser({
+      userIdRaw: input.userId,
+      packagesCount
+    });
+
+    await clearBotUserState(input.numericUserId);
+
+    await maxBotClient.sendMessage({
+      userId: input.userId,
+      text: created.reused ? getActiveTopupUserMessage(created.topup) : getTopupPaymentLinkMessage(created.topup)
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      await maxBotClient.sendMessage({
+        userId: input.userId,
+        text: error.message
+      });
+      return;
+    }
+    throw error;
+  }
 }
 
 router.post("/webhook/max", authRateLimit, async (req, res, next) => {
@@ -515,6 +586,33 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
 
     if (isCallbackEvent) {
       const action = resolveActionFromEvent(event, req.body);
+
+      if (action.kind === "topup") {
+        await handleTopupAction({
+          userId: event.userId,
+          numericUserId,
+          callbackId: event.callbackId || undefined
+        });
+        return res.json({ ok: true, handled: "TOPUP_ACTION" });
+      }
+
+      const activeTopup = await getActiveTopupForUser(numericUserId);
+      if (activeTopup) {
+        await maxBotClient.sendMessage({
+          userId: event.userId,
+          text: getActiveTopupUserMessage(activeTopup)
+        });
+
+        if (event.callbackId) {
+          await maxBotClient.answerCallback({
+            callbackId: event.callbackId,
+            notification: "Сначала завершите оплату"
+          });
+        }
+
+        return res.json({ ok: true, handled: "ACTIVE_TOPUP_BLOCK" });
+      }
+
       const actionSubmissionId = await resolveActionSubmissionId(event.userId, action.submissionId);
 
       if (action.kind === "confirm" && actionSubmissionId) {
@@ -531,9 +629,9 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         await handleCancelAction({
           submissionId: actionSubmissionId,
           userId: event.userId,
+          numericUserId,
           callbackId: event.callbackId || undefined,
-          req,
-          profileText: profile.text
+          req
         });
         return res.json({ ok: true, handled: "SUBMISSION_CANCELLED" });
       }
@@ -541,13 +639,14 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       if (action.kind !== "none" && !actionSubmissionId) {
         await maxBotClient.sendMessage({
           userId: event.userId,
-          text: `${noPendingSubmissionMessage()}\n\n${profile.text}`
+          text: noPendingSubmissionMessage()
         });
+        await sendProfileMessage(numericUserId, event.userId);
 
         if (event.callbackId) {
           await maxBotClient.answerCallback({
             callbackId: event.callbackId,
-            notification: "РќРµС‚ Р·Р°СЏРІРѕРє РґР»СЏ РґРµР№СЃС‚РІРёСЏ"
+            notification: "Нет заявок для действия"
           });
         }
 
@@ -557,9 +656,10 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       if (event.callbackId) {
         await maxBotClient.answerCallback({
           callbackId: event.callbackId,
-          notification: "РќРµРёР·РІРµСЃС‚РЅРѕРµ РґРµР№СЃС‚РІРёРµ"
+          notification: "Неизвестное действие"
         });
       }
+
       return res.json({ ok: true, skipped: "CALLBACK_NOT_HANDLED" });
     }
 
@@ -567,17 +667,58 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true, skipped: "EVENT_TYPE_NOT_SUPPORTED" });
     }
 
+    const userState = await getBotUserState(numericUserId);
+
+    if (userState?.state === BOT_STATE_AWAITING_TOPUP_PACKAGES) {
+      const activeTopup = await getActiveTopupForUser(numericUserId);
+      if (activeTopup) {
+        await clearBotUserState(numericUserId);
+        await maxBotClient.sendMessage({
+          userId: event.userId,
+          text: getActiveTopupUserMessage(activeTopup)
+        });
+        return res.json({ ok: true, handled: "TOPUP_ALREADY_ACTIVE" });
+      }
+
+      await handleTopupPackagesInput({
+        userId: event.userId,
+        numericUserId,
+        text: event.text
+      });
+
+      return res.json({ ok: true, handled: "TOPUP_PACKAGES_INPUT" });
+    }
+
+    const messageAction = resolveActionFromEvent(event, req.body);
+    if (messageAction.kind === "topup") {
+      await handleTopupAction({
+        userId: event.userId,
+        numericUserId
+      });
+      return res.json({ ok: true, handled: "TOPUP_ACTION" });
+    }
+
+    const activeTopup = await getActiveTopupForUser(numericUserId);
+    if (activeTopup) {
+      await maxBotClient.sendMessage({
+        userId: event.userId,
+        text: getActiveTopupUserMessage(activeTopup)
+      });
+      return res.json({ ok: true, handled: "ACTIVE_TOPUP_BLOCK" });
+    }
+
     if (isStartCommand(event.text)) {
+      await clearBotUserState(numericUserId);
       await handleStartCommand({
         userId: event.userId,
-        req,
-        profileText: profile.text
+        numericUserId,
+        req
       });
       return res.json({ ok: true, handled: "START_RESET" });
     }
 
-    const messageAction = resolveActionFromEvent(event, req.body);
     const messageActionSubmissionId = await resolveActionSubmissionId(event.userId, messageAction.submissionId);
+
     if (messageAction.kind === "confirm" && messageActionSubmissionId) {
       await handleConfirmAction({
         submissionId: messageActionSubmissionId,
@@ -591,8 +732,8 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       await handleCancelAction({
         submissionId: messageActionSubmissionId,
         userId: event.userId,
-        req,
-        profileText: profile.text
+        numericUserId,
+        req
       });
       return res.json({ ok: true, handled: "SUBMISSION_CANCELLED" });
     }
@@ -600,8 +741,9 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
     if (messageAction.kind !== "none" && !messageActionSubmissionId) {
       await maxBotClient.sendMessage({
         userId: event.userId,
-        text: `${noPendingSubmissionMessage()}\n\n${profile.text}`
+        text: noPendingSubmissionMessage()
       });
+      await sendProfileMessage(numericUserId, event.userId);
       return res.json({ ok: true, handled: "NO_PENDING_SUBMISSION" });
     }
 
@@ -659,9 +801,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
             where: { submissionId: awaiting.id },
             select: { storageKey: true }
           });
-          await prisma.fileEntity.deleteMany({
-            where: { submissionId: awaiting.id }
-          });
+          await prisma.fileEntity.deleteMany({ where: { submissionId: awaiting.id } });
 
           const storageKeys = Array.from(new Set([...files.map((item) => item.storageKey), stored.storageKey]));
           for (const storageKey of storageKeys) {
@@ -677,9 +817,6 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
             userId: event.userId
           });
 
-          const freshProfile = await getUserProfilePayload(numericUserId);
-          const freshProfileText = freshProfile?.text ?? profile.text;
-
           await logAuditEvent({
             actorUserId: event.userId,
             action: "bot.submission.rejected.insufficient_balance",
@@ -690,17 +827,16 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
 
           await maxBotClient.sendMessage({
             userId: event.userId,
-            text: `${insufficientBalanceMessage()}\n\n${freshProfileText}`
+            text: insufficientBalanceMessage()
           });
+
+          await sendProfileMessage(numericUserId, event.userId);
 
           return res.json({ ok: true, handled: "SUBMISSION_REJECTED_INSUFFICIENT_BALANCE" });
         }
 
         throw error;
       }
-
-      const freshProfile = await getUserProfilePayload(numericUserId);
-      const freshProfileText = freshProfile?.text ?? profile.text;
 
       await logAuditEvent({
         actorUserId: event.userId,
@@ -713,9 +849,10 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
 
       await maxBotClient.sendMessage({
         userId: event.userId,
-        text: `${photoSavedAndConfirmedMessage()}\n\n${freshProfileText}`
+        text: photoSavedAndConfirmedMessage()
       });
 
+      await sendProfileMessage(numericUserId, event.userId);
       return res.json({ ok: true, handled: "SUBMISSION_CONFIRMED_WITH_PHOTO" });
     }
 

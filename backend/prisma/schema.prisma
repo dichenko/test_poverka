@@ -39,16 +39,20 @@ enum AuditEntityType {
 }
 
 model Organization {
-  id                BigInt  @id @default(autoincrement()) @map("org_id")
-  balance           Float?  @db.DoublePrecision
-  email             String? @unique @map("org_email")
-  name              String  @map("org_name")
-  balanceStartOfDay Float?  @map("balance_start_of_day") @db.DoublePrecision
-  userTarif         Float?  @map("user_tarif") @db.DoublePrecision
+  id                      BigInt  @id @default(autoincrement()) @map("org_id")
+  balance                 Float?  @db.DoublePrecision
+  email                   String? @unique @map("org_email")
+  name                    String  @map("org_name")
+  balanceStartOfDay       Float?  @map("balance_start_of_day") @db.DoublePrecision
+  userTarif               Float?  @map("user_tarif") @db.DoublePrecision
+  balanceKopecks          BigInt  @default(0) @map("balance_kopecks")
+  tariffPerPackageKopecks BigInt  @default(0) @map("tariff_per_package_kopecks")
 
-  users         User[]
-  submissions   MeterSubmission[]
-  billingEvents SubmissionBillingEvent[]
+  users               User[]
+  submissions         MeterSubmission[]
+  billingEvents       SubmissionBillingEvent[]
+  topups              OrganizationTopup[]
+  balanceTransactions OrganizationBalanceTransaction[]
 
   @@map("organizations")
 }
@@ -64,13 +68,16 @@ model User {
   orgName        String?  @map("org_name")
   orgEmail       String?  @map("org_email")
 
-  organization     Organization?             @relation(fields: [organizationId], references: [id])
-  submissions      MeterSubmission[]
-  statusHistory    SubmissionStatusHistory[] @relation("StatusChangedBy")
-  refreshTokens    AuthRefreshToken[]
-  createdAuditLogs AuditLog[]                @relation("CreatedByUser")
-  files            FileEntity[]
-  billingEvents    SubmissionBillingEvent[]
+  organization               Organization?                    @relation(fields: [organizationId], references: [id])
+  submissions                MeterSubmission[]
+  statusHistory              SubmissionStatusHistory[]        @relation("StatusChangedBy")
+  refreshTokens              AuthRefreshToken[]
+  createdAuditLogs           AuditLog[]                       @relation("CreatedByUser")
+  files                      FileEntity[]
+  billingEvents              SubmissionBillingEvent[]
+  topups                     OrganizationTopup[]
+  botState                   BotUserState?
+  balanceTransactionsCreated OrganizationBalanceTransaction[] @relation("BalanceTransactionCreatedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -81,7 +88,7 @@ model MeterSubmission {
   userId          BigInt           @map("user_id")
   organizationId  BigInt           @map("organization_id")
   meterNumber     String           @map("meter_number")
-  currentValue    Decimal          @db.Decimal(14, 3) @map("current_value")
+  currentValue    Decimal          @map("current_value") @db.Decimal(14, 3)
   address         String?          @map("address")
   phone           String?          @map("phone")
   waterType       WaterType?       @map("water_type")
@@ -90,11 +97,11 @@ model MeterSubmission {
   awaitingPhoto   Boolean          @default(false) @map("awaiting_photo")
   status          SubmissionStatus
   source          SubmissionSource @default(MINIAPP)
-  draftCreatedAt  DateTime         @default(now()) @db.Timestamptz(3) @map("draft_created_at")
-  confirmedAt     DateTime?        @db.Timestamptz(3) @map("confirmed_at")
-  rejectedAt      DateTime?        @db.Timestamptz(3) @map("rejected_at")
-  createdAt       DateTime         @default(now()) @db.Timestamptz(3) @map("created_at")
-  updatedAt       DateTime         @updatedAt @db.Timestamptz(3) @map("updated_at")
+  draftCreatedAt  DateTime         @default(now()) @map("draft_created_at") @db.Timestamptz(3)
+  confirmedAt     DateTime?        @map("confirmed_at") @db.Timestamptz(3)
+  rejectedAt      DateTime?        @map("rejected_at") @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user          User                      @relation(fields: [userId], references: [id])
   organization  Organization              @relation(fields: [organizationId], references: [id])
@@ -117,7 +124,7 @@ model SubmissionStatusHistory {
   newStatus       SubmissionStatus  @map("new_status")
   changedByUserId BigInt?           @map("changed_by_user_id")
   reason          String?
-  createdAt       DateTime          @default(now()) @db.Timestamptz(3) @map("created_at")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
 
   submission    MeterSubmission @relation(fields: [submissionId], references: [id])
   changedByUser User?           @relation("StatusChangedBy", fields: [changedByUserId], references: [id])
@@ -135,7 +142,7 @@ model AuditLog {
   meta        Json?
   ip          String?
   userAgent   String?         @map("user_agent")
-  createdAt   DateTime        @default(now()) @db.Timestamptz(3) @map("created_at")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
 
   actorUser User? @relation("CreatedByUser", fields: [actorUserId], references: [id])
 
@@ -149,12 +156,12 @@ model AuthRefreshToken {
   id              String    @id @default(cuid())
   userId          BigInt    @map("user_id")
   tokenHash       String    @unique @map("token_hash")
-  expiresAt       DateTime  @db.Timestamptz(3) @map("expires_at")
-  revokedAt       DateTime? @db.Timestamptz(3) @map("revoked_at")
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(3)
   replacedByToken String?   @map("replaced_by_token")
   createdByIp     String?   @map("created_by_ip")
   userAgent       String?   @map("user_agent")
-  createdAt       DateTime  @default(now()) @db.Timestamptz(3) @map("created_at")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id])
 
@@ -166,27 +173,27 @@ model InitDataReplay {
   id        String   @id @default(cuid())
   replayKey String   @unique @map("replay_key")
   maxUserId String   @map("max_user_id")
-  expiresAt DateTime @db.Timestamptz(3) @map("expires_at")
-  createdAt DateTime @default(now()) @db.Timestamptz(3) @map("created_at")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([expiresAt])
   @@map("init_data_replays")
 }
 
 model FileEntity {
-  id           String    @id @default(cuid())
-  ownerUserId  BigInt?   @map("owner_user_id")
-  submissionId String?   @map("submission_id")
-  storageKey   String    @unique @map("storage_key")
-  compressedPath String? @map("compressed_path")
-  processedAt  DateTime? @db.Timestamptz(3) @map("processed_at")
-  processingError String? @map("processing_error")
-  originalName String    @map("original_name")
-  mimeType     String    @map("mime_type")
-  sizeBytes    Int       @map("size_bytes")
-  publicUrl    String    @map("public_url")
-  createdAt    DateTime  @default(now()) @db.Timestamptz(3) @map("created_at")
-  updatedAt    DateTime  @updatedAt @db.Timestamptz(3) @map("updated_at")
+  id              String    @id @default(cuid())
+  ownerUserId     BigInt?   @map("owner_user_id")
+  submissionId    String?   @map("submission_id")
+  storageKey      String    @unique @map("storage_key")
+  compressedPath  String?   @map("compressed_path")
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz(3)
+  processingError String?   @map("processing_error")
+  originalName    String    @map("original_name")
+  mimeType        String    @map("mime_type")
+  sizeBytes       Int       @map("size_bytes")
+  publicUrl       String    @map("public_url")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   ownerUser  User?            @relation(fields: [ownerUserId], references: [id])
   submission MeterSubmission? @relation(fields: [submissionId], references: [id])
@@ -201,11 +208,11 @@ model SubmissionBillingEvent {
   userId         BigInt   @map("user_id")
   organizationId BigInt   @map("organization_id")
   submissionId   String   @unique @map("submission_id")
-  amount         Float    @db.DoublePrecision
-  createdAt      DateTime @default(now()) @db.Timestamptz(3) @map("created_at")
+  amountKopecks  BigInt   @default(0) @map("amount_kopecks")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  user         User           @relation(fields: [userId], references: [id])
-  organization Organization   @relation(fields: [organizationId], references: [id])
+  user         User            @relation(fields: [userId], references: [id])
+  organization Organization    @relation(fields: [organizationId], references: [id])
   submission   MeterSubmission @relation(fields: [submissionId], references: [id])
 
   @@index([userId, createdAt(sort: Desc)])
@@ -221,4 +228,117 @@ model EquipmentType {
   submissions MeterSubmission[]
 
   @@map("equipment_types")
+}
+
+model OrganizationTopup {
+  id                      String    @id @default(uuid()) @db.Uuid
+  organizationId          BigInt    @map("organization_id")
+  userId                  BigInt    @map("user_id")
+  status                  String
+  packagesCount           Int       @map("packages_count")
+  tariffPerPackageKopecks BigInt    @map("tariff_per_package_kopecks")
+  amountKopecks           BigInt    @map("amount_kopecks")
+  currency                String    @default("RUB")
+  provider                String    @default("yookassa")
+  providerInvoiceId       String?   @map("provider_invoice_id")
+  providerInvoiceUrl      String?   @map("provider_invoice_url")
+  providerPaymentId       String?   @map("provider_payment_id")
+  providerStatus          String?   @map("provider_status")
+  providerIdempotenceKey  String?   @map("provider_idempotence_key")
+  expiresAt               DateTime  @map("expires_at") @db.Timestamptz(3)
+  paidAt                  DateTime? @map("paid_at") @db.Timestamptz(3)
+  canceledAt              DateTime? @map("canceled_at") @db.Timestamptz(3)
+  cancelReasonCode        String?   @map("cancel_reason_code")
+  cancelReasonText        String?   @map("cancel_reason_text")
+  lastProviderSyncAt      DateTime? @map("last_provider_sync_at") @db.Timestamptz(3)
+  nextPollAt              DateTime? @map("next_poll_at") @db.Timestamptz(3)
+  pollAttempts            Int       @default(0) @map("poll_attempts")
+  errorMessage            String?   @map("error_message")
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization                      @relation(fields: [organizationId], references: [id])
+  user         User                              @relation(fields: [userId], references: [id])
+  attempts     OrganizationTopupPaymentAttempt[]
+
+  @@index([status, nextPollAt])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([userId, status])
+  @@map("organization_topups")
+}
+
+model OrganizationBalanceTransaction {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       BigInt   @map("organization_id")
+  direction            String
+  amountKopecks        BigInt   @map("amount_kopecks")
+  balanceBeforeKopecks BigInt   @map("balance_before_kopecks")
+  balanceAfterKopecks  BigInt   @map("balance_after_kopecks")
+  sourceType           String   @map("source_type")
+  sourceId             String   @map("source_id")
+  createdByUserId      BigInt?  @map("created_by_user_id")
+  comment              String?
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization  Organization @relation(fields: [organizationId], references: [id])
+  createdByUser User?        @relation("BalanceTransactionCreatedBy", fields: [createdByUserId], references: [id])
+
+  @@unique([sourceType, sourceId, direction])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("organization_balance_transactions")
+}
+
+model OrganizationTopupPaymentAttempt {
+  id                 String    @id @default(uuid()) @db.Uuid
+  topupId            String    @map("topup_id") @db.Uuid
+  providerInvoiceId  String?   @map("provider_invoice_id")
+  providerPaymentId  String    @unique @map("provider_payment_id")
+  status             String
+  amountKopecks      BigInt    @map("amount_kopecks")
+  currency           String    @default("RUB")
+  paid               Boolean   @default(false)
+  cancellationParty  String?   @map("cancellation_party")
+  cancellationReason String?   @map("cancellation_reason")
+  rawPayload         Json?     @map("raw_payload")
+  firstSeenAt        DateTime  @default(now()) @map("first_seen_at") @db.Timestamptz(3)
+  paidAt             DateTime? @map("paid_at") @db.Timestamptz(3)
+  canceledAt         DateTime? @map("canceled_at") @db.Timestamptz(3)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  topup OrganizationTopup @relation(fields: [topupId], references: [id])
+
+  @@index([topupId, createdAt(sort: Desc)])
+  @@map("organization_topup_payment_attempts")
+}
+
+model YookassaWebhookLog {
+  id               BigInt    @id @default(autoincrement())
+  eventType        String    @map("event_type")
+  providerObjectId String    @map("provider_object_id")
+  topupId          String?   @map("topup_id") @db.Uuid
+  remoteIp         String?   @map("remote_ip")
+  isTrustedIp      Boolean   @default(false) @map("is_trusted_ip")
+  headers          Json?
+  payload          Json
+  payloadSha256    String    @unique @map("payload_sha256")
+  processingStatus String    @default("received") @map("processing_status")
+  processingError  String?   @map("processing_error")
+  receivedAt       DateTime  @default(now()) @map("received_at") @db.Timestamptz(3)
+  processedAt      DateTime? @map("processed_at") @db.Timestamptz(3)
+
+  @@index([providerObjectId])
+  @@map("yookassa_webhook_log")
+}
+
+model BotUserState {
+  userId    BigInt   @id @map("user_id")
+  state     String
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("bot_user_states")
 }

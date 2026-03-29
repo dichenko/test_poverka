@@ -9,14 +9,18 @@ async function main() {
       name: "OOO Poverka Test",
       balance: 50000,
       balanceStartOfDay: 12000,
-      userTarif: 1250
+      userTarif: 1250,
+      balanceKopecks: 5000000n,
+      tariffPerPackageKopecks: 125000n
     },
     create: {
       name: "OOO Poverka Test",
       email: "org@poverka-bot.ru",
       balance: 50000,
       balanceStartOfDay: 12000,
-      userTarif: 1250
+      userTarif: 1250,
+      balanceKopecks: 5000000n,
+      tariffPerPackageKopecks: 125000n
     }
   });
 

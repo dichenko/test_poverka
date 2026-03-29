@@ -15,6 +15,7 @@ Production-ready baseline for MAX bot + miniapp + PostgreSQL.
 - `pgadmin` -> `127.0.0.1:5050`
 - `backend` -> `127.0.0.1:3000`
 - `photo-worker` -> background service (no public port)
+- `payment-worker` -> background service (no public port)
 - `miniapp` -> `127.0.0.1:8080`
 
 ## Important infra decision
@@ -61,7 +62,7 @@ Use `deploy.sh`:
 It runs:
 
 - `git pull`
-- `docker compose up -d --build db pgadmin backend photo-worker miniapp`
+- `docker compose up -d --build db pgadmin backend photo-worker payment-worker miniapp`
 
 ## Logs
 
@@ -70,6 +71,7 @@ It runs:
 ./logs-miniapp.sh
 ./logs.sh
 docker compose logs -f photo-worker
+docker compose logs -f payment-worker
 ```
 
 ## Prisma commands
@@ -124,3 +126,54 @@ Quick check after deploy:
 1. Upload photo through bot flow.
 2. `docker compose logs -f photo-worker` and wait for `Photo processed successfully`.
 3. In DB, check `files.processed_at`, `files.compressed_path`, `files.public_url`, `files.processing_error`.
+
+## YooKassa Topups
+
+Implemented flow:
+
+- User presses `Пополнить баланс` in profile message.
+- Bot asks for package count and creates YooKassa invoice (`POST /v3/invoices`) with TTL 3 minutes.
+- Webhook (`POST /api/payments/yookassa/webhook`) is the primary payment truth source.
+- `payment-worker` reconciles pending topups as fallback.
+- While active topup exists (`awaiting_payment` / `finalizing`), submission flow is blocked on both bot and backend API levels (`ACTIVE_TOPUP_PENDING`).
+
+### Required env vars
+
+```bash
+YOOKASSA_API_BASE_URL=https://api.yookassa.ru
+YOOKASSA_SHOP_ID=...
+YOOKASSA_SECRET_KEY=...
+YOOKASSA_REQUEST_TIMEOUT_MS=10000
+YOOKASSA_WEBHOOK_IP_ALLOWLIST=185.71.76.0/27,185.71.77.0/27,77.75.153.0/25,77.75.156.11,77.75.156.35
+
+PAYMENT_MIN_PACKAGES_PER_TOPUP=1
+PAYMENT_MAX_PACKAGES_PER_TOPUP=1000
+PAYMENT_INVOICE_TTL_SECONDS=180
+PAYMENT_POLL_INTERVAL_SECONDS=10
+PAYMENT_POLL_BATCH_SIZE=50
+PAYMENT_POLL_BACKOFF_BASE_SECONDS=5
+PAYMENT_POLL_BACKOFF_MAX_SECONDS=120
+```
+
+### Webhook setup in YooKassa
+
+In YooKassa dashboard configure webhook URL:
+
+```text
+https://<your-backend-domain>/api/payments/yookassa/webhook
+```
+
+Subscribe to events:
+
+- `payment.succeeded`
+- `payment.canceled`
+
+### DB migration
+
+Run Prisma migration before enabling topups:
+
+```bash
+cd backend
+npm run prisma:migrate
+npm run prisma:generate
+```

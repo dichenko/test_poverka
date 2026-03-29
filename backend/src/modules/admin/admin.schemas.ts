@@ -53,5 +53,7 @@ export const adminUpdateOrganizationSchema = z.object({
   email: z.string().email().optional().nullable(),
   balance: z.number().nonnegative().nullable().optional(),
   balanceStartOfDay: z.number().nonnegative().nullable().optional(),
-  userTarif: z.number().nonnegative().nullable().optional()
+  userTarif: z.number().nonnegative().nullable().optional(),
+  balanceKopecks: z.coerce.bigint().nonnegative().optional(),
+  tariffPerPackageKopecks: z.coerce.bigint().nonnegative().optional()
 });

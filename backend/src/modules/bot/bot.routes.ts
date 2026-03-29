@@ -33,7 +33,6 @@ import { maxBotClient } from "./max-bot.client";
 import { getUserProfilePayload } from "./profile.service";
 import {
   insufficientBalanceMessage,
-  knownUserUnexpectedMessage,
   noPendingSubmissionMessage,
   photoRequiredMessage,
   photoSavedAndConfirmedMessage,
@@ -137,7 +136,7 @@ function cancelKeyboard(submissionId: string) {
           [
             {
               type: "message",
-              text: "Îòìåíèòü",
+              text: "ÐžÑ‚Ð¼ÐµÐ½Ð¸Ñ‚ÑŒ",
               payload: `cancel_submission:${submissionId}`
             }
           ]
@@ -240,15 +239,15 @@ function parseActionToken(value: string): { kind: EventActionKind; submissionId:
   const normalized = value.trim();
   const lowered = normalized.toLowerCase();
 
-  if (lowered === "ïîïîëíèòü áàëàíñ" || lowered === "topup_balance") {
+  if (lowered === "Ð¿Ð¾Ð¿Ð¾Ð»Ð½Ð¸Ñ‚ÑŒ Ð±Ð°Ð»Ð°Ð½Ñ" || lowered === "topup_balance") {
     return { kind: "topup", submissionId: "" };
   }
 
-  if (lowered === "ïîäòâåðäèòü" || lowered === "confirm") {
+  if (lowered === "Ð¿Ð¾Ð´Ñ‚Ð²ÐµÑ€Ð´Ð¸Ñ‚ÑŒ" || lowered === "confirm") {
     return { kind: "confirm", submissionId: "" };
   }
 
-  if (lowered === "îòìåíèòü" || lowered === "cancel") {
+  if (lowered === "Ð¾Ñ‚Ð¼ÐµÐ½Ð¸Ñ‚ÑŒ" || lowered === "cancel") {
     return { kind: "cancel", submissionId: "" };
   }
 
@@ -395,7 +394,7 @@ async function handleConfirmAction(input: {
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
-      notification: "Ïðèêðåïèòå ôîòîãðàôèþ ñ÷åò÷èêà"
+      notification: "ÐŸÑ€Ð¸ÐºÑ€ÐµÐ¿Ð¸Ñ‚Ðµ Ñ„Ð¾Ñ‚Ð¾Ð³Ñ€Ð°Ñ„Ð¸ÑŽ ÑÑ‡ÐµÑ‚Ñ‡Ð¸ÐºÐ°"
     });
   }
 }
@@ -439,7 +438,7 @@ async function handleCancelAction(input: {
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
-      notification: "Çàÿâêà îòìåíåíà"
+      notification: "Ð—Ð°ÑÐ²ÐºÐ° Ð¾Ñ‚Ð¼ÐµÐ½ÐµÐ½Ð°"
     });
   }
 }
@@ -468,8 +467,8 @@ async function handleStartCommand(input: { userId: string; numericUserId: bigint
 
   const prefix =
     cancelled.cancelledCount > 0
-      ? `Êîìàíäà /start âûïîëíåíà. Îòìåíåíî íåçàâåðøåííûõ çàÿâîê: ${cancelled.cancelledCount}.`
-      : "Êîìàíäà /start âûïîëíåíà. Íåçàâåðøåííûõ çàÿâîê íå íàéäåíî.";
+      ? `ÐšÐ¾Ð¼Ð°Ð½Ð´Ð° /start Ð²Ñ‹Ð¿Ð¾Ð»Ð½ÐµÐ½Ð°. ÐžÑ‚Ð¼ÐµÐ½ÐµÐ½Ð¾ Ð½ÐµÐ·Ð°Ð²ÐµÑ€ÑˆÐµÐ½Ð½Ñ‹Ñ… Ð·Ð°ÑÐ²Ð¾Ðº: ${cancelled.cancelledCount}.`
+      : "ÐšÐ¾Ð¼Ð°Ð½Ð´Ð° /start Ð²Ñ‹Ð¿Ð¾Ð»Ð½ÐµÐ½Ð°. ÐÐµÐ·Ð°Ð²ÐµÑ€ÑˆÐµÐ½Ð½Ñ‹Ñ… Ð·Ð°ÑÐ²Ð¾Ðº Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½Ð¾.";
 
   await maxBotClient.sendMessage({
     userId: input.userId,
@@ -490,7 +489,7 @@ async function handleTopupAction(input: { userId: string; numericUserId: bigint;
     if (input.callbackId) {
       await maxBotClient.answerCallback({
         callbackId: input.callbackId,
-        notification: "Åñòü àêòèâíîå ïîïîëíåíèå"
+        notification: "Ð•ÑÑ‚ÑŒ Ð°ÐºÑ‚Ð¸Ð²Ð½Ð¾Ðµ Ð¿Ð¾Ð¿Ð¾Ð»Ð½ÐµÐ½Ð¸Ðµ"
       });
     }
     return;
@@ -499,13 +498,13 @@ async function handleTopupAction(input: { userId: string; numericUserId: bigint;
   await setBotUserState(input.numericUserId, BOT_STATE_AWAITING_TOPUP_PACKAGES);
   await maxBotClient.sendMessage({
     userId: input.userId,
-    text: "Ñêîëüêî ïàêåòîâ õîòèòå êóïèòü?"
+    text: "Ð¡ÐºÐ¾Ð»ÑŒÐºÐ¾ Ð¿Ð°ÐºÐµÑ‚Ð¾Ð² Ñ…Ð¾Ñ‚Ð¸Ñ‚Ðµ ÐºÑƒÐ¿Ð¸Ñ‚ÑŒ?"
   });
 
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
-      notification: "Ââåäèòå êîëè÷åñòâî ïàêåòîâ"
+      notification: "Ð’Ð²ÐµÐ´Ð¸Ñ‚Ðµ ÐºÐ¾Ð»Ð¸Ñ‡ÐµÑÑ‚Ð²Ð¾ Ð¿Ð°ÐºÐµÑ‚Ð¾Ð²"
     });
   }
 }
@@ -515,7 +514,7 @@ async function handleTopupPackagesInput(input: { userId: string; numericUserId: 
   if (packagesCount == null) {
     await maxBotClient.sendMessage({
       userId: input.userId,
-      text: `Ââåäèòå öåëîå ÷èñëî ïàêåòîâ îò ${env.PAYMENT_MIN_PACKAGES_PER_TOPUP} äî ${env.PAYMENT_MAX_PACKAGES_PER_TOPUP}.`
+      text: `Ð’Ð²ÐµÐ´Ð¸Ñ‚Ðµ Ñ†ÐµÐ»Ð¾Ðµ Ñ‡Ð¸ÑÐ»Ð¾ Ð¿Ð°ÐºÐµÑ‚Ð¾Ð² Ð¾Ñ‚ ${env.PAYMENT_MIN_PACKAGES_PER_TOPUP} Ð´Ð¾ ${env.PAYMENT_MAX_PACKAGES_PER_TOPUP}.`
     });
     return;
   }
@@ -606,7 +605,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         if (event.callbackId) {
           await maxBotClient.answerCallback({
             callbackId: event.callbackId,
-            notification: "Ñíà÷àëà çàâåðøèòå îïëàòó"
+            notification: "Ð•ÑÑ‚ÑŒ Ð°ÐºÑ‚Ð¸Ð²Ð½Ð¾Ðµ Ð¿Ð¾Ð¿Ð¾Ð»Ð½ÐµÐ½Ð¸Ðµ"
           });
         }
 
@@ -646,7 +645,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         if (event.callbackId) {
           await maxBotClient.answerCallback({
             callbackId: event.callbackId,
-            notification: "Íåò çàÿâîê äëÿ äåéñòâèÿ"
+            notification: "ÐÐµÑ‚ Ð·Ð°ÑÐ²Ð¾Ðº Ð´Ð»Ñ Ð´ÐµÐ¹ÑÑ‚Ð²Ð¸Ñ"
           });
         }
 
@@ -656,7 +655,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       if (event.callbackId) {
         await maxBotClient.answerCallback({
           callbackId: event.callbackId,
-          notification: "Íåèçâåñòíîå äåéñòâèå"
+          notification: "ÐÐµÐ¸Ð·Ð²ÐµÑÑ‚Ð½Ð¾Ðµ Ð´ÐµÐ¹ÑÑ‚Ð²Ð¸Ðµ"
         });
       }
 
@@ -856,10 +855,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true, handled: "SUBMISSION_CONFIRMED_WITH_PHOTO" });
     }
 
-    await maxBotClient.sendMessage({
-      userId: event.userId,
-      text: knownUserUnexpectedMessage(event.userId, profile.remainingPackages)
-    });
+    const freshProfile = await sendProfileMessage(numericUserId, event.userId);
 
     await logAuditEvent({
       actorUserId: profile.user.id,
@@ -867,7 +863,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       entityType: "SYSTEM",
       meta: {
         eventType: event.type,
-        remainingPackages: profile.remainingPackages
+        remainingPackages: freshProfile?.remainingPackages ?? profile.remainingPackages
       },
       req
     });

@@ -16,7 +16,7 @@ export function buildTopupBalanceKeyboard() {
           [
             {
               type: "message",
-              text: "Пополнить баланс",
+              text: "РџРѕРїРѕР»РЅРёС‚СЊ Р±Р°Р»Р°РЅСЃ",
               payload: TOPUP_BALANCE_CALLBACK_PAYLOAD
             }
           ]
@@ -28,9 +28,9 @@ export function buildTopupBalanceKeyboard() {
 
 export function buildUserProfileMessage(input: UserProfileMessageInput) {
   return {
-    text: `Профиль пользователя:\n?? ID: ${input.maxUserId}\n?? ФИО: ${input.fullName}\n?? Организация: ${
+    text: `РџСЂРѕС„РёР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ:\nID: ${input.maxUserId}\nР¤РРћ: ${input.fullName}\nРћСЂРіР°РЅРёР·Р°С†РёСЏ: ${
       input.organizationName || "-"
-    }\n? Осталось пакетов: ${input.remainingPackages}\n? Связь с админом @HelpMetr\n?? Связь с админом +79370332222`,
+    }\nРћСЃС‚Р°Р»РѕСЃСЊ РїР°РєРµС‚РѕРІ: ${input.remainingPackages}\nРЎРІСЏР·СЊ СЃ Р°РґРјРёРЅРѕРј @HelpMetr\nРЎРІСЏР·СЊ СЃ Р°РґРјРёРЅРѕРј +79370332222`,
     attachments: buildTopupBalanceKeyboard()
   };
 }

@@ -115,7 +115,7 @@ function isActiveTopupUniqueViolation(error: unknown) {
 function validatePackagesCount(packagesCount: number) {
   if (!Number.isInteger(packagesCount) || packagesCount <= 0) {
     throw new AppError(
-      "Введите целое положительное число пакетов.",
+      "Р’РІРµРґРёС‚Рµ С†РµР»РѕРµ РїРѕР»РѕР¶РёС‚РµР»СЊРЅРѕРµ С‡РёСЃР»Рѕ РїР°РєРµС‚РѕРІ.",
       400,
       PAYMENT_ERROR_CODES.TOPUP_INVALID_PACKAGES_COUNT
     );
@@ -123,7 +123,7 @@ function validatePackagesCount(packagesCount: number) {
 
   if (packagesCount < env.PAYMENT_MIN_PACKAGES_PER_TOPUP || packagesCount > env.PAYMENT_MAX_PACKAGES_PER_TOPUP) {
     throw new AppError(
-      `Количество пакетов должно быть от ${env.PAYMENT_MIN_PACKAGES_PER_TOPUP} до ${env.PAYMENT_MAX_PACKAGES_PER_TOPUP}.`,
+      `РљРѕР»РёС‡РµСЃС‚РІРѕ РїР°РєРµС‚РѕРІ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РѕС‚ ${env.PAYMENT_MIN_PACKAGES_PER_TOPUP} РґРѕ ${env.PAYMENT_MAX_PACKAGES_PER_TOPUP}.`,
       400,
       PAYMENT_ERROR_CODES.TOPUP_INVALID_PACKAGES_COUNT
     );
@@ -146,8 +146,8 @@ export function getTopupPaymentLinkMessage(topup: {
   amountKopecks: bigint;
   providerInvoiceUrl: string | null;
 }) {
-  const url = topup.providerInvoiceUrl || "(ссылка недоступна)";
-  return `Для оплаты перейдите по ссылке: ${url}\nВремя для оплаты: ${USER_TOPUP_LINK_TTL_MINUTES} минуты, после этого ссылка станет недействительной.`;
+  const url = topup.providerInvoiceUrl || "(СЃСЃС‹Р»РєР° РЅРµРґРѕСЃС‚СѓРїРЅР°)";
+  return `Р”Р»СЏ РѕРїР»Р°С‚С‹ РїРµСЂРµР№РґРёС‚Рµ РїРѕ СЃСЃС‹Р»РєРµ: ${url}\nР’СЂРµРјСЏ РґР»СЏ РѕРїР»Р°С‚С‹: ${USER_TOPUP_LINK_TTL_MINUTES} РјРёРЅСѓС‚С‹, РїРѕСЃР»Рµ СЌС‚РѕРіРѕ СЃСЃС‹Р»РєР° СЃС‚Р°РЅРµС‚ РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅРѕР№.`;
 }
 
 export function getActiveTopupUserMessage(topup: {
@@ -156,22 +156,22 @@ export function getActiveTopupUserMessage(topup: {
   expiresAt: Date;
 }) {
   const amountRub = formatKopecksAsRubles(topup.amountKopecks);
-  const url = topup.providerInvoiceUrl || "(ссылка недоступна)";
+  const url = topup.providerInvoiceUrl || "(СЃСЃС‹Р»РєР° РЅРµРґРѕСЃС‚СѓРїРЅР°)";
   const expiresAt = formatMoscowDateTime(topup.expiresAt);
 
-  return `У тебя есть незавершенное пополнение баланса на ${amountRub}.\nОплати его по ссылке: ${url}\nСрок действия до ${expiresAt}.`;
+  return `РЈ С‚РµР±СЏ РµСЃС‚СЊ РЅРµР·Р°РІРµСЂС€РµРЅРЅРѕРµ РїРѕРїРѕР»РЅРµРЅРёРµ Р±Р°Р»Р°РЅСЃР° РЅР° ${amountRub}.\nРћРїР»Р°С‚Рё РµРіРѕ РїРѕ СЃСЃС‹Р»РєРµ: ${url}\nРЎСЂРѕРє РґРµР№СЃС‚РІРёСЏ РґРѕ ${expiresAt}.`;
 }
 
 async function sendTopupFinalizedMessages(input: { userId: bigint; success: boolean }) {
   if (input.success) {
     await maxBotClient.sendMessage({
       userId: input.userId.toString(),
-      text: "Платеж прошел, средства зачислены на ваш счет."
+      text: "РџР»Р°С‚РµР¶ РїСЂРѕС€РµР», СЃСЂРµРґСЃС‚РІР° Р·Р°С‡РёСЃР»РµРЅС‹ РЅР° РІР°С€ СЃС‡РµС‚."
     });
   } else {
     await maxBotClient.sendMessage({
       userId: input.userId.toString(),
-      text: "Время оплаты истекло, платеж отменен."
+      text: "Р’СЂРµРјСЏ РѕРїР»Р°С‚С‹ РёСЃС‚РµРєР»Рѕ, РїР»Р°С‚РµР¶ РѕС‚РјРµРЅРµРЅ."
     });
   }
 
@@ -255,7 +255,7 @@ export async function createOrReuseTopupForUser(input: {
   });
 
   if (tariffPerPackageKopecks <= 0n) {
-    throw new AppError("Тариф организации не настроен.", 409, "ORG_TARIFF_NOT_CONFIGURED");
+    throw new AppError("РўР°СЂРёС„ РѕСЂРіР°РЅРёР·Р°С†РёРё РЅРµ РЅР°СЃС‚СЂРѕРµРЅ.", 409, "ORG_TARIFF_NOT_CONFIGURED");
   }
 
   const amountKopecks = BigInt(input.packagesCount) * tariffPerPackageKopecks;
@@ -304,7 +304,7 @@ export async function createOrReuseTopupForUser(input: {
   }
 
   try {
-    const itemDescription = `Пополнение баланса организации: ${input.packagesCount} пакетов`;
+    const itemDescription = `РџРѕРїРѕР»РЅРµРЅРёРµ Р±Р°Р»Р°РЅСЃР° РѕСЂРіР°РЅРёР·Р°С†РёРё: ${input.packagesCount} РїР°РєРµС‚РѕРІ`;
 
     const invoice = await yookassaClient.createInvoice(
       {
@@ -392,7 +392,7 @@ export async function createOrReuseTopupForUser(input: {
     );
 
     throw new AppError(
-      "Не удалось создать ссылку на оплату. Попробуйте снова через минуту.",
+      "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ СЃСЃС‹Р»РєСѓ РЅР° РѕРїР»Р°С‚Сѓ. РџРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР° С‡РµСЂРµР· РјРёРЅСѓС‚Сѓ.",
       502,
       PAYMENT_ERROR_CODES.TOPUP_CREATE_FAILED
     );

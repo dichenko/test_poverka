@@ -4,7 +4,7 @@ import { prisma } from "../../common/prisma";
 import { legacyRublesToKopecks } from "../payments/money";
 
 const INSUFFICIENT_BALANCE_MESSAGE =
-  "Недостаточно средств на балансе организации. Отправка не выполнена. Пополните баланс и попробуйте снова.";
+  "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ СЃСЂРµРґСЃС‚РІ РЅР° Р±Р°Р»Р°РЅСЃРµ РѕСЂРіР°РЅРёР·Р°С†РёРё. РћС‚РїСЂР°РІРєР° РЅРµ РІС‹РїРѕР»РЅРµРЅР°. РџРѕРїРѕР»РЅРёС‚Рµ Р±Р°Р»Р°РЅСЃ Рё РїРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР°.";
 
 function parseMeterValue(rawValue: string) {
   const normalized = rawValue.replace(",", ".");
@@ -52,7 +52,7 @@ function ensureOrganizationCanSubmit(input: {
   });
 
   if (tariffKopecks <= 0n) {
-    throw new AppError("Тариф организации не настроен.", 409, "ORG_TARIF_NOT_CONFIGURED");
+    throw new AppError("РўР°СЂРёС„ РѕСЂРіР°РЅРёР·Р°С†РёРё РЅРµ РЅР°СЃС‚СЂРѕРµРЅ.", 409, "ORG_TARIF_NOT_CONFIGURED");
   }
 
   const balanceKopecks = resolveBalanceKopecks({

@@ -120,8 +120,8 @@ async function loadService() {
 
   const mockProfileService: any = {
     getUserProfilePayload: vi.fn(async () => ({
-      text: "Профиль пользователя:\n...",
-      attachments: [{ type: "inline_keyboard", payload: { buttons: [[{ text: "Пополнить баланс", payload: "topup_balance" }]] } }]
+      text: "РџСЂРѕС„РёР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ:\n...",
+      attachments: [{ type: "inline_keyboard", payload: { buttons: [[{ text: "РџРѕРїРѕР»РЅРёС‚СЊ Р±Р°Р»Р°РЅСЃ", payload: "topup_balance" }]] } }]
     }))
   };
 

@@ -13,7 +13,7 @@ function escapeHtml(value: string) {
 
 export function unknownUserMessage(maxUserId: string) {
   return `Вас нет в базе.<br>
-Свяжитесь с : <a href="max://user/91634403">Метрология ГК</a><br>
+Свяжитесь с поддержкой: <a href="max://user/91634403">Метрология ГК</a><br>
 Или по телефону +7(937)-033-22-22<br>
 Ваш MaxID: ${escapeHtml(maxUserId)}`;
 }

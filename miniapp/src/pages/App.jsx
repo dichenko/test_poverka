@@ -14,11 +14,53 @@ import { useAuth } from "../hooks/useAuth";
 import { closeWebApp } from "../lib/maxWebApp";
 
 const OTHER_EQUIPMENT_TYPE_VALUE = "other";
+const OTHER_EQUIPMENT_TYPE_LABEL = "Другая";
+const NORMALIZED_OTHER_EQUIPMENT_TYPE_LABEL = OTHER_EQUIPMENT_TYPE_LABEL.toLowerCase();
+
+function normalizeEquipmentTypeName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function findBuiltinOtherEquipmentType(equipmentTypes) {
+  return (
+    equipmentTypes.find(
+      (item) => normalizeEquipmentTypeName(item?.name) === NORMALIZED_OTHER_EQUIPMENT_TYPE_LABEL
+    ) || null
+  );
+}
+
+function buildEquipmentTypeOptions(equipmentTypes) {
+  const options = [];
+  for (const item of equipmentTypes) {
+    const name = String(item?.name || "").trim();
+    if (!name) {
+      continue;
+    }
+    if (normalizeEquipmentTypeName(name) === NORMALIZED_OTHER_EQUIPMENT_TYPE_LABEL) {
+      continue;
+    }
+    options.push({
+      key: String(item.id),
+      value: String(item.id),
+      label: name
+    });
+  }
+
+  options.push({
+    key: OTHER_EQUIPMENT_TYPE_VALUE,
+    value: OTHER_EQUIPMENT_TYPE_VALUE,
+    label: OTHER_EQUIPMENT_TYPE_LABEL
+  });
+
+  return options;
+}
 
 const submissionSchema = z
   .object({
-    address: z.string().trim().min(3, "Введите корректный адрес"),
-    phone: z.string().trim().regex(/^\d{10}$/, "Введите телефон из 10 цифр без +7"),
+    address: z.string().trim().min(3, "Введите адрес"),
+    phone: z.string().trim().regex(/^\d{10}$/, "Введите ровно 10 цифр после +7"),
     waterType: z.enum(["HVS", "GVS"], { message: "Выберите тип воды" }),
     equipmentTypeId: z.string().trim().min(1, "Выберите тип счетчика"),
     customEquipmentTypeName: z.string().trim().max(120, "Слишком длинный тип счетчика").optional(),
@@ -27,12 +69,12 @@ const submissionSchema = z
       .string()
       .trim()
       .refine((value) => /^\d{4}$/.test(value) && Number(value) >= 1950 && Number(value) <= 2050, {
-        message: "Год выпуска должен быть в диапазоне 1950-2050"
+        message: "Год выпуска должен быть от 1950 до 2050"
       }),
-    reading: z.string().trim().regex(/^\d+([.,]\d{1,3})?$/, "Показания должны быть числом")
+    reading: z.string().trim().regex(/^\d+([.,]\d{1,3})?$/, "Введите корректное числовое показание")
   })
   .superRefine((value, ctx) => {
-    const customType = value.customEquipmentTypeName?.trim() ?? "";
+    const customType = value.customEquipmentTypeName?.trim() || "";
 
     if (value.equipmentTypeId === OTHER_EQUIPMENT_TYPE_VALUE) {
       if (!customType) {
@@ -57,7 +99,7 @@ const submissionSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["customEquipmentTypeName"],
-        message: "Поле другого типа доступно только для варианта \"Другая\""
+        message: 'Поле "Другой тип счетчика" доступно только для варианта "Другая"'
       });
     }
   });
@@ -68,7 +110,7 @@ function StatusScreen({ title, description, code }) {
       <div className="card">
         <h2>{title}</h2>
         <p style={{ whiteSpace: "pre-line" }}>{description}</p>
-        {code ? <p>Р В РЎв„ўР В РЎвЂўР В РўвЂ: {code}</p> : null}
+        {code ? <p>Код: {code}</p> : null}
       </div>
     </div>
   );
@@ -132,31 +174,35 @@ function UserPanel({ accessToken, canSubmitInitially }) {
   async function loadEquipment() {
     try {
       const data = await listEquipmentTypes(accessToken);
-      setEquipmentTypes(data.equipmentTypes || []);
+      const availableEquipmentTypes = data.equipmentTypes || [];
+      setEquipmentTypes(availableEquipmentTypes);
+      return availableEquipmentTypes;
     } catch (err) {
       if (err.code === "ACTIVE_TOPUP_PENDING") {
-        setActiveTopupMessage(err.message || "Р В Р в‚¬ Р В Р вЂ Р В Р’В°Р РЋР С“ Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р В РЎвЂўР В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ.");
-        return;
+        setActiveTopupMessage(err.message || "У вас есть активное пополнение.");
+        return [];
       }
       throw err;
     }
   }
 
-  async function loadLatestPending() {
+  async function loadLatestPending(availableEquipmentTypes = equipmentTypes) {
     try {
       const data = await getLatestPendingSubmission(accessToken);
       if (!data.submission) {
         return;
       }
+      const builtinOtherEquipmentType = findBuiltinOtherEquipmentType(availableEquipmentTypes);
+      const rawEquipmentTypeId = data.submission.equipmentTypeId ? String(data.submission.equipmentTypeId) : "";
+      const isBuiltinOtherSelected =
+        Boolean(builtinOtherEquipmentType) && rawEquipmentTypeId === String(builtinOtherEquipmentType.id);
+      const hasCustomEquipmentType = Boolean((data.submission.customEquipmentTypeName || "").trim());
       setForm({
         address: data.submission.address || "",
         phone: data.submission.phone || "",
         waterType: data.submission.waterType || "HVS",
-        equipmentTypeId: data.submission.equipmentTypeId
-          ? String(data.submission.equipmentTypeId)
-          : data.submission.customEquipmentTypeName
-            ? OTHER_EQUIPMENT_TYPE_VALUE
-            : "",
+        equipmentTypeId:
+          hasCustomEquipmentType || isBuiltinOtherSelected ? OTHER_EQUIPMENT_TYPE_VALUE : rawEquipmentTypeId,
         customEquipmentTypeName: data.submission.customEquipmentTypeName || "",
         factoryNumber: data.submission.factoryNumber || "",
         productionYear: data.submission.productionYear ? String(data.submission.productionYear) : "",
@@ -164,7 +210,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
       });
     } catch (err) {
       if (err.code === "ACTIVE_TOPUP_PENDING") {
-        setActiveTopupMessage(err.message || "Р В Р в‚¬ Р В Р вЂ Р В Р’В°Р РЋР С“ Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р В РЎвЂўР В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ.");
+        setActiveTopupMessage(err.message || "У вас есть активное пополнение.");
         return;
       }
       throw err;
@@ -190,13 +236,13 @@ function UserPanel({ accessToken, canSubmitInitially }) {
       };
       await createDraftSubmission(payload, accessToken);
       setActiveTopupMessage("");
-      setSavedNotice("Р В РІР‚вЂќР В Р’В°Р РЋР РЏР В Р вЂ Р В РЎвЂќР В Р’В° Р В РЎвЂўР РЋРІР‚С™Р В РЎвЂ”Р РЋР вЂљР В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В Р’В° Р В Р вЂ  Р В Р’В±Р В РЎвЂўР РЋРІР‚С™. Р В РЎСџР В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В Р’ВµР В Р’Вµ Р РЋР С“ Р РЋРІР‚С›Р В РЎвЂўР РЋРІР‚С™Р В РЎвЂў Р В РЎвЂР В Р’В»Р В РЎвЂ Р В РЎвЂўР РЋРІР‚С™Р В РЎВР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В Р вЂ  Р РЋР С“Р В РЎвЂўР В РЎвЂўР В Р’В±Р РЋРІР‚В°Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В РЎвЂ.");
+      setSavedNotice("Заявка отправлена в бот. Подтвердите ее с фото или отмените в сообщении.");
       setTimeout(() => closeWebApp(), 250);
     } catch (err) {
       if (err.code === "ACTIVE_TOPUP_PENDING") {
-        setActiveTopupMessage(err.message || "Р В Р в‚¬ Р В Р вЂ Р В Р’В°Р РЋР С“ Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р В РЎвЂўР В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ.");
+        setActiveTopupMessage(err.message || "У вас есть активное пополнение.");
       }
-      setError(err.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В РЎвЂќ");
+      setError(err.message || "Не удалось создать черновик");
     } finally {
       setLoading(false);
     }
@@ -205,37 +251,40 @@ function UserPanel({ accessToken, canSubmitInitially }) {
   useEffect(() => {
     async function run() {
       try {
-        await loadEquipment();
-        await loadLatestPending();
+        const availableEquipmentTypes = await loadEquipment();
+        await loadLatestPending(availableEquipmentTypes);
       } catch (err) {
-        setError(err.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР РЋРІР‚в„–");
+        setError(err.message || "Не удалось загрузить данные формы");
       }
     }
 
     void run();
   }, []);
 
+  const equipmentTypeOptions = buildEquipmentTypeOptions(equipmentTypes);
+  const isOtherEquipmentTypeSelected = form.equipmentTypeId === OTHER_EQUIPMENT_TYPE_VALUE;
+
   return (
     <div>
-      <h3>Р В РЎСџР В Р’ВµР РЋР вЂљР В Р’ВµР В РўвЂР В Р’В°Р РЋРІР‚РЋР В Р’В° Р В РЎвЂ”Р В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“</h3>
+      <h3>Передача показаний</h3>
       {!canSubmitInitially ? (
         <div className="alert error">
-          Р В РЎСљР В Р’ВµР В РўвЂР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂў Р РЋР С“Р РЋР вЂљР В Р’ВµР В РўвЂР РЋР С“Р РЋРІР‚С™Р В Р вЂ  Р В Р вЂ¦Р В Р’В° Р В Р’В±Р В Р’В°Р В Р’В»Р В Р’В°Р В Р вЂ¦Р РЋР С“Р В Р’Вµ Р В РЎвЂўР РЋР вЂљР В РЎвЂ“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ. Р В РЎвЂєР РЋРІР‚С™Р В РЎвЂ”Р РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂќР В Р’В° Р В Р вЂ¦Р В Р’Вµ Р В Р вЂ Р РЋРІР‚в„–Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В Р’В°. Р В РЎСџР В РЎвЂўР В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В Р’В±Р В Р’В°Р В Р’В»Р В Р’В°Р В Р вЂ¦Р РЋР С“ Р В РЎвЂ Р В РЎвЂ”Р В РЎвЂўР В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р’В±Р РЋРЎвЂњР В РІвЂћвЂ“Р РЋРІР‚С™Р В Р’Вµ Р РЋР С“Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В°.
+          Недостаточно средств на балансе организации. Отправка не выполнена. Пополните баланс и попробуйте снова.
         </div>
       ) : null}
       {activeTopupMessage ? <div className="alert error">{activeTopupMessage}</div> : null}
       <form onSubmit={submitDraft}>
         <div className="field">
-          <label htmlFor="address">Р В РЎвЂ™Р В РўвЂР РЋР вЂљР В Р’ВµР РЋР С“</label>
+          <label htmlFor="address">Адрес</label>
           <input
             id="address"
             value={form.address}
             onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))}
-            placeholder="Р В РЎСљР В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ: Р РЋРЎвЂњР В Р’В». Р В РІР‚С”Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р вЂ¦Р В Р’В°, Р В РўвЂ. 10, Р В РЎвЂќР В Р вЂ . 15"
+            placeholder="Например: ул. Ленина, д. 10, кв. 15"
           />
         </div>
         <div className="field">
-          <label htmlFor="phone">Р В РЎС›Р В Р’ВµР В Р’В»Р В Р’ВµР РЋРІР‚С›Р В РЎвЂўР В Р вЂ¦</label>
+          <label htmlFor="phone">Телефон</label>
           <div className="phone-input">
             <span>+7</span>
             <input
@@ -252,18 +301,18 @@ function UserPanel({ accessToken, canSubmitInitially }) {
         </div>
         <div className="row">
           <div className="field" style={{ flex: "1 1 160px" }}>
-            <label htmlFor="waterType">Р В РЎС›Р В РЎвЂР В РЎвЂ” Р В Р вЂ Р В РЎвЂўР В РўвЂР РЋРІР‚в„–</label>
+            <label htmlFor="waterType">Тип воды</label>
             <select
               id="waterType"
               value={form.waterType}
               onChange={(event) => setForm((prev) => ({ ...prev, waterType: event.target.value }))}
             >
-              <option value="HVS">Р В РўС’Р В РІР‚в„ўР В Р Р‹</option>
-              <option value="GVS">Р В РІР‚СљР В РІР‚в„ўР В Р Р‹</option>
+              <option value="HVS">ХВС</option>
+              <option value="GVS">ГВС</option>
             </select>
           </div>
           <div className="field" style={{ flex: "2 1 260px" }}>
-            <label htmlFor="equipmentTypeId">Р В РЎС›Р В РЎвЂР В РЎвЂ” Р РЋР С“Р РЋРІР‚РЋР В Р’ВµР РЋРІР‚С™Р РЋРІР‚РЋР В РЎвЂР В РЎвЂќР В Р’В°</label>
+            <label htmlFor="equipmentTypeId">Тип счетчика</label>
             <select
               id="equipmentTypeId"
               value={form.equipmentTypeId}
@@ -276,45 +325,38 @@ function UserPanel({ accessToken, canSubmitInitially }) {
                 }))
               }
             >
-              <option value="">Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ”</option>
-              {equipmentTypes.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
+              <option value="">Выберите тип</option>
+              {equipmentTypeOptions.map((option) => (
+                <option key={option.key} value={option.value}>
+                  {option.label}
                 </option>
               ))}
-              <option value={OTHER_EQUIPMENT_TYPE_VALUE}>Другая</option>
             </select>
           </div>
         </div>
-        {form.equipmentTypeId === OTHER_EQUIPMENT_TYPE_VALUE ? (
+        {isOtherEquipmentTypeSelected ? (
           <div className="field">
-            <label htmlFor="customEquipmentTypeName">Укажите тип счетчика</label>
+            <label htmlFor="customEquipmentTypeName">Другой тип счетчика</label>
             <input
               id="customEquipmentTypeName"
               value={form.customEquipmentTypeName}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, customEquipmentTypeName: event.target.value }))
-              }
+              onChange={(event) => setForm((prev) => ({ ...prev, customEquipmentTypeName: event.target.value }))}
               placeholder="Введите тип счетчика"
-              maxLength={120}
             />
           </div>
         ) : null}
         <div className="row">
           <div className="field" style={{ flex: "1 1 180px" }}>
-            <label htmlFor="factoryNumber">Р В РІР‚вЂќР В Р’В°Р В Р вЂ Р В РЎвЂўР В РўвЂР РЋР С“Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“ Р В Р вЂ¦Р В РЎвЂўР В РЎВР В Р’ВµР РЋР вЂљ</label>
+            <label htmlFor="factoryNumber">Заводской номер</label>
             <input
               id="factoryNumber"
-              inputMode="text"
               value={form.factoryNumber}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, factoryNumber: event.target.value }))
-              }
-              placeholder="Р СњР В°Р С—РЎР‚Р С‘Р СР ВµРЎР‚ A123B45"
+              onChange={(event) => setForm((prev) => ({ ...prev, factoryNumber: event.target.value }))}
+              placeholder="Например A123B45"
             />
           </div>
           <div className="field" style={{ flex: "1 1 180px" }}>
-            <label htmlFor="productionYear">Р В РІР‚СљР В РЎвЂўР В РўвЂ Р В Р вЂ Р РЋРІР‚в„–Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р В РЎвЂќР В Р’В°</label>
+            <label htmlFor="productionYear">Год выпуска</label>
             <input
               id="productionYear"
               inputMode="numeric"
@@ -322,11 +364,11 @@ function UserPanel({ accessToken, canSubmitInitially }) {
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, productionYear: event.target.value.replace(/\D/g, "").slice(0, 4) }))
               }
-              placeholder="Р В РЎСљР В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ 2021"
+              placeholder="Например 2021"
             />
           </div>
           <div className="field" style={{ flex: "1 1 180px" }}>
-            <label htmlFor="reading">Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ</label>
+            <label htmlFor="reading">Показания</label>
             <input
               id="reading"
               type="number"
@@ -335,12 +377,12 @@ function UserPanel({ accessToken, canSubmitInitially }) {
               step="0.001"
               value={form.reading}
               onChange={(event) => setForm((prev) => ({ ...prev, reading: event.target.value }))}
-              placeholder="Р В РЎСљР В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ 88.5"
+              placeholder="Например 88.5"
             />
           </div>
         </div>
         <button className="button" type="submit" disabled={loading || !canSubmitInitially || Boolean(activeTopupMessage)}>
-          {loading ? "Р В Р Р‹Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ..." : "Р В Р Р‹Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В·Р В Р’В°Р РЋР РЏР В Р вЂ Р В РЎвЂќР РЋРЎвЂњ"}
+          {loading ? "Сохранение..." : "Создать заявку"}
         </button>
       </form>
 
@@ -381,7 +423,7 @@ function AdminPanel({ accessToken }) {
       setSubmissions(submissionsData.submissions || []);
       setLogs(logsData.logs || []);
     } catch (err) {
-      setError(err.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦-Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ");
+      setError(err.message || "Не удалось загрузить админ-данные");
     }
   }
 
@@ -413,7 +455,7 @@ function AdminPanel({ accessToken }) {
       });
       await loadBaseData();
     } catch (err) {
-      setError(err.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ");
+      setError(err.message || "Не удалось создать пользователя");
     }
   }
 
@@ -422,7 +464,7 @@ function AdminPanel({ accessToken }) {
       await updateUser(user.id, { isActive: !user.isActive }, accessToken);
       await loadBaseData();
     } catch (err) {
-      setError(err.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂР В Р’В·Р В РЎВР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ");
+      setError(err.message || "Не удалось изменить статус пользователя");
     }
   }
 
@@ -431,24 +473,24 @@ function AdminPanel({ accessToken }) {
       const data = await getSubmissionHistory(submissionId, accessToken);
       setHistory(data.history || []);
     } catch (err) {
-      setError(err.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР вЂ№ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“Р В РЎвЂўР В Р вЂ ");
+      setError(err.message || "Не удалось получить историю статусов");
     }
   }
 
   return (
     <div>
-      <h3>Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦-Р В РЎвЂ”Р В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р’В»Р РЋР Р‰</h3>
+      <h3>Админ-панель</h3>
       {error ? <div className="alert error">{error}</div> : null}
       <div className="tabs">
         <button className={`tab ${tab === "users" ? "active" : ""}`} onClick={() => setTab("users")} type="button">
-          Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р В РЎвЂ
+          Пользователи
         </button>
         <button
           className={`tab ${tab === "submissions" ? "active" : ""}`}
           onClick={() => setTab("submissions")}
           type="button"
         >
-          Р В РІР‚вЂќР В Р’В°Р РЋР РЏР В Р вЂ Р В РЎвЂќР В РЎвЂ
+          Заявки
         </button>
         <button className={`tab ${tab === "logs" ? "active" : ""}`} onClick={() => setTab("logs")} type="button">
           Audit
@@ -467,14 +509,14 @@ function AdminPanel({ accessToken }) {
                 />
               </div>
               <div className="field" style={{ flex: "1 1 180px" }}>
-                <label>Р В Р’ВР В РЎВР РЋР РЏ</label>
+                <label>Имя</label>
                 <input
                   value={userForm.firstName}
                   onChange={(event) => setUserForm((prev) => ({ ...prev, firstName: event.target.value }))}
                 />
               </div>
               <div className="field" style={{ flex: "1 1 180px" }}>
-                <label>Р В Р’В¤Р В Р’В°Р В РЎВР В РЎвЂР В Р’В»Р В РЎвЂР РЋР РЏ</label>
+                <label>Фамилия</label>
                 <input
                   value={userForm.lastName}
                   onChange={(event) => setUserForm((prev) => ({ ...prev, lastName: event.target.value }))}
@@ -483,7 +525,7 @@ function AdminPanel({ accessToken }) {
             </div>
             <div className="row">
               <div className="field" style={{ flex: "1 1 150px" }}>
-                <label>Р В Р’В Р В РЎвЂўР В Р’В»Р РЋР Р‰</label>
+                <label>Роль</label>
                 <select
                   value={userForm.role}
                   onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))}
@@ -493,12 +535,12 @@ function AdminPanel({ accessToken }) {
                 </select>
               </div>
               <div className="field" style={{ flex: "2 1 240px" }}>
-                <label>Р В РЎвЂєР РЋР вЂљР В РЎвЂ“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ</label>
+                <label>Организация</label>
                 <select
                   value={userForm.organizationId}
                   onChange={(event) => setUserForm((prev) => ({ ...prev, organizationId: event.target.value }))}
                 >
-                  <option value="">Р В РІР‚ВР В Р’ВµР В Р’В· Р В РЎвЂўР РЋР вЂљР В РЎвЂ“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ</option>
+                  <option value="">Без организации</option>
                   {organizations.map((org) => (
                     <option key={org.id} value={org.id}>
                       {org.name} ({org.inn})
@@ -508,18 +550,18 @@ function AdminPanel({ accessToken }) {
               </div>
             </div>
             <button className="button" type="submit">
-              Р В Р Р‹Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ
+              Создать пользователя
             </button>
           </form>
 
           <table>
             <thead>
               <tr>
-                <th>Р В Р’ВР В РЎВР РЋР РЏ</th>
+                <th>Имя</th>
                 <th>MAX ID</th>
-                <th>Р В Р’В Р В РЎвЂўР В Р’В»Р РЋР Р‰</th>
-                <th>Р В РЎвЂєР РЋР вЂљР В РЎвЂ“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ</th>
-                <th>Р В РЎвЂ™Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р’ВµР В Р вЂ¦</th>
+                <th>Роль</th>
+                <th>Организация</th>
+                <th>Активен</th>
                 <th />
               </tr>
             </thead>
@@ -530,10 +572,10 @@ function AdminPanel({ accessToken }) {
                   <td>{item.maxUserId}</td>
                   <td>{item.role}</td>
                   <td>{item.organizationName || "-"}</td>
-                  <td>{item.isActive ? "Р В РІР‚СњР В Р’В°" : "Р В РЎСљР В Р’ВµР РЋРІР‚С™"}</td>
+                  <td>{item.isActive ? "Да" : "Нет"}</td>
                   <td>
                     <button className="button" type="button" onClick={() => toggleUser(item)}>
-                      {item.isActive ? "Р В РІР‚СњР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰" : "Р В РЎвЂ™Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰"}
+                      {item.isActive ? "Деактивировать" : "Активировать"}
                     </button>
                   </td>
                 </tr>
@@ -548,16 +590,16 @@ function AdminPanel({ accessToken }) {
           <table>
             <thead>
               <tr>
-                <th>Р В РІР‚СњР В Р’В°Р РЋРІР‚С™Р В Р’В°</th>
-                <th>Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰</th>
-                <th>Р В РЎвЂєР РЋР вЂљР В РЎвЂ“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ</th>
-                <th>Р В РЎвЂ™Р В РўвЂР РЋР вЂљР В Р’ВµР РЋР С“</th>
-                <th>Р В РЎС›Р В РЎвЂР В РЎвЂ” Р В Р вЂ Р В РЎвЂўР В РўвЂР РЋРІР‚в„–</th>
-                <th>Р В РЎС›Р В РЎвЂР В РЎвЂ” Р РЋР С“Р РЋРІР‚РЋР В Р’ВµР РЋРІР‚С™Р РЋРІР‚РЋР В РЎвЂР В РЎвЂќР В Р’В°</th>
-                <th>Р В РІР‚вЂќР В Р’В°Р В Р вЂ Р В РЎвЂўР В РўвЂР РЋР С“Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“ Р Р†РІР‚С›РІР‚вЂњ</th>
-                <th>Р В РІР‚СљР В РЎвЂўР В РўвЂ</th>
-                <th>Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ</th>
-                <th>Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“</th>
+                <th>Дата</th>
+                <th>Пользователь</th>
+                <th>Организация</th>
+                <th>Адрес</th>
+                <th>Тип воды</th>
+                <th>Тип счетчика</th>
+                <th>Заводской №</th>
+                <th>Год</th>
+                <th>Показания</th>
+                <th>Статус</th>
                 <th />
               </tr>
             </thead>
@@ -568,15 +610,15 @@ function AdminPanel({ accessToken }) {
                   <td>{item.user.fullName}</td>
                   <td>{item.organization.name}</td>
                   <td>{item.address || "-"}</td>
-                  <td>{item.waterType === "GVS" ? "Р В РІР‚СљР В РІР‚в„ўР В Р Р‹" : item.waterType === "HVS" ? "Р В РўС’Р В РІР‚в„ўР В Р Р‹" : "-"}</td>
-                  <td>{item.equipmentTypeName || "-"}</td>
+                  <td>{item.waterType === "GVS" ? "ГВС" : item.waterType === "HVS" ? "ХВС" : "-"}</td>
+                  <td>{item.customEquipmentTypeName || item.equipmentTypeName || "-"}</td>
                   <td>{item.factoryNumber || "-"}</td>
                   <td>{item.productionYear || "-"}</td>
                   <td>{item.reading}</td>
                   <td>{item.status}</td>
                   <td>
                     <button className="button" type="button" onClick={() => loadHistory(item.id)}>
-                      Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ
+                      История
                     </button>
                   </td>
                 </tr>
@@ -585,10 +627,10 @@ function AdminPanel({ accessToken }) {
           </table>
           {history.length ? (
             <div className="alert info">
-              <strong>Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“Р В РЎвЂўР В Р вЂ </strong>
+              <strong>История статусов</strong>
               {history.map((entry) => (
                 <div key={entry.id}>
-                  {formatDateTimeMsk(entry.createdAt)} {entry.oldStatus || "-"} Р Р†РІР‚В РІР‚в„ў {entry.newStatus}{" "}
+                  {formatDateTimeMsk(entry.createdAt)} {entry.oldStatus || "-"} → {entry.newStatus}{" "}
                   {entry.changedBy ? `(${entry.changedBy.fullName})` : ""}
                 </div>
               ))}
@@ -601,7 +643,7 @@ function AdminPanel({ accessToken }) {
         <table>
           <thead>
             <tr>
-              <th>Р В РІР‚СњР В Р’В°Р РЋРІР‚С™Р В Р’В°</th>
+              <th>Дата</th>
               <th>Action</th>
               <th>Entity</th>
               <th>Actor</th>
@@ -631,37 +673,37 @@ export default function App() {
   const canSubmitInitially = hasEnoughBalance(user?.organizationBalance, user?.organizationTarif);
 
   if (loading) {
-    return <StatusScreen title="Р В РІР‚вЂќР В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В°" description="Р В РІР‚в„ўР РЋРІР‚в„–Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р РЋР РЏР В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋР РЏ Р В Р’В°Р В Р вЂ Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ Р РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р’ВµР В Р’В· MAX WebApp..." />;
+    return <StatusScreen title="Загрузка" description="Выполняется авторизация через MAX WebApp..." />;
   }
 
   if (!accessToken || !user) {
     if (errorCode === "USER_NOT_FOUND" || errorCode === "INITDATA_MISSING") {
       return (
         <StatusScreen
-          title="Р В РІР‚в„ўР РЋРІР‚в„– Р В Р вЂ¦Р В Р’Вµ Р В Р вЂ  Р В Р’В±Р В Р’В°Р В Р’В·Р В Р’Вµ"
-          description={`Р В РІР‚в„ўР РЋРІР‚в„– Р В Р вЂ¦Р В Р’Вµ Р В Р вЂ  Р В Р’В±Р В Р’В°Р В Р’В·Р В Р’Вµ, Р В Р вЂ Р В Р’В°Р РЋРІвЂљВ¬ MAX ID ${maxUserId || "Р В Р вЂ¦Р В Р’Вµ Р В РЎвЂўР В РЎвЂ”Р РЋР вЂљР В Р’ВµР В РўвЂР В Р’ВµР В Р’В»Р В Р’ВµР В Р вЂ¦"}
-Р Р†Р’ВР вЂ№ Р В Р Р‹Р В Р вЂ Р РЋР РЏР В Р’В·Р РЋР Р‰ Р РЋР С“ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂўР В РЎВ @HelpMetr
-РЎР‚РЎСџРІР‚СљРЎвЂє  Р В Р Р‹Р В Р вЂ Р РЋР РЏР В Р’В·Р РЋР Р‰ Р РЋР С“ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂўР В РЎВ +79370332222`}
+          title="Вы не в базе"
+          description={`Вы не в базе, ваш MAX ID ${maxUserId || "не определен"}
+☎ Связь с админом @HelpMetr
+📞  Связь с админом +79370332222`}
         />
       );
     }
     if (errorCode === "USER_INACTIVE") {
       return (
         <StatusScreen
-          title="Р В РЎвЂ™Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™ Р В Р’В·Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦"
-          description="Р В РІР‚СњР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋРЎвЂњР В РЎвЂ” Р В РЎвЂќ miniapp Р В РЎвЂўР РЋРІР‚С™Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦. Р В РЎвЂєР В Р’В±Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋР Р‰ Р В РЎвЂќ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР РЋРЎвЂњ."
+          title="Аккаунт заблокирован"
+          description="Доступ к miniapp отключен. Обратитесь к администратору."
           code={errorCode}
         />
       );
     }
-    return <StatusScreen title="Р В РЎвЂєР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В Р’В° Р В Р’В°Р В Р вЂ Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ" description={error || "Р В РІР‚СњР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋРЎвЂњР В РЎвЂ” Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В Р’ВµР РЋРІР‚В°Р В Р’ВµР В Р вЂ¦"} code={errorCode} />;
+    return <StatusScreen title="Ошибка авторизации" description={error || "Доступ запрещен"} code={errorCode} />;
   }
 
   return (
     <div className="page">
       <div className="card">
-        <h2>{user.organizationName || "Р В РЎвЂєР РЋР вЂљР В РЎвЂ“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ Р В Р вЂ¦Р В Р’Вµ Р РЋРЎвЂњР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р В Р вЂ¦Р В Р’В°"}</h2>
-        <p>Р В РЎСџР В Р’В°Р В РЎвЂќР В Р’ВµР РЋРІР‚С™Р РЋРІР‚в„–: {packagesCount}</p>
+        <h2>{user.organizationName || "Организация не указана"}</h2>
+        <p>Пакеты: {packagesCount}</p>
         <p>{user.fullName}</p>
         {user.role === "ADMIN" ? (
           <AdminPanel accessToken={accessToken} />

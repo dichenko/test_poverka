@@ -4,3 +4,4 @@ dist/
 npm-debug.log*
 postgres-data/
 pgadmin-data/
+project_rules.md

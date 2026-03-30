@@ -18,9 +18,12 @@ export function parseYookassaAmountToRubles(value: string): bigint {
   const cents = centsRaw.padEnd(2, "0");
 
   if (cents !== "00") {
-    throw new AppError("Amount with fractional rubles is not supported.", 500, "PAYMENT_AMOUNT_WITH_KOPECKS", {
-      value
-    });
+    throw new AppError(
+      "Amount with fractional rubles is not supported.",
+      500,
+      "PAYMENT_AMOUNT_FRACTIONAL_RUBLES_NOT_SUPPORTED",
+      { value }
+    );
   }
 
   return rubles;

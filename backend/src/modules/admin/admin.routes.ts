@@ -1,4 +1,4 @@
-﻿import { Prisma, UserRole } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import { Router } from "express";
 import { prisma } from "../../common/prisma";
 import { validate } from "../../common/validate";
@@ -20,6 +20,24 @@ const router = Router();
 
 router.use(requireAuth, requireRole([UserRole.ADMIN]));
 
+function serializeOrganization(org: {
+  id: bigint;
+  name: string;
+  email: string | null;
+  balance: bigint;
+  balanceStartOfDay: bigint | null;
+  userTarif: bigint;
+}) {
+  return {
+    id: org.id.toString(),
+    name: org.name,
+    email: org.email,
+    balance: org.balance.toString(),
+    balanceStartOfDay: org.balanceStartOfDay?.toString() ?? null,
+    userTarif: org.userTarif.toString()
+  };
+}
+
 router.get("/admin/organizations", async (_req, res, next) => {
   try {
     const organizations = await prisma.organization.findMany({
@@ -27,16 +45,7 @@ router.get("/admin/organizations", async (_req, res, next) => {
     });
     res.json({
       ok: true,
-      organizations: organizations.map((org) => ({
-        id: org.id.toString(),
-        name: org.name,
-        email: org.email,
-        balance: org.balance,
-        balanceStartOfDay: org.balanceStartOfDay,
-        userTarif: org.userTarif,
-        balanceKopecks: org.balanceKopecks.toString(),
-        tariffPerPackageKopecks: org.tariffPerPackageKopecks.toString()
-      }))
+      organizations: organizations.map((org) => serializeOrganization(org))
     });
   } catch (error) {
     next(error);
@@ -58,9 +67,7 @@ router.patch(
           email: body.email ?? undefined,
           balance: body.balance ?? undefined,
           balanceStartOfDay: body.balanceStartOfDay ?? undefined,
-          userTarif: body.userTarif ?? undefined,
-          balanceKopecks: body.balanceKopecks ?? undefined,
-          tariffPerPackageKopecks: body.tariffPerPackageKopecks ?? undefined
+          userTarif: body.userTarif ?? undefined
         }
       });
 
@@ -75,16 +82,7 @@ router.patch(
 
       return res.json({
         ok: true,
-        organization: {
-          id: organization.id.toString(),
-          name: organization.name,
-          email: organization.email,
-          balance: organization.balance,
-          balanceStartOfDay: organization.balanceStartOfDay,
-          userTarif: organization.userTarif,
-          balanceKopecks: organization.balanceKopecks.toString(),
-          tariffPerPackageKopecks: organization.tariffPerPackageKopecks.toString()
-        }
+        organization: serializeOrganization(organization)
       });
     } catch (error) {
       return next(error);

@@ -1,4 +1,4 @@
-﻿import { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AppError } from "../../common/app-error";
 import { logger } from "../../common/logger";
 import { prisma } from "../../common/prisma";
@@ -8,10 +8,9 @@ import { maxBotClient } from "../bot/max-bot.client";
 import { getUserProfilePayload } from "../bot/profile.service";
 import { ACTIVE_TOPUP_STATUSES, PAYMENT_ERROR_CODES, TOPUP_STATUS } from "./payments.constants";
 import {
-  formatKopecksAsRubles,
-  kopecksToYookassaAmount,
-  legacyRublesToKopecks,
-  parseYookassaAmountToKopecks
+  formatRubles,
+  rublesToYookassaAmount,
+  parseYookassaAmountToRubles
 } from "./money";
 import { YookassaHttpError, type YookassaPayment, yookassaClient } from "./yookassa.client";
 
@@ -64,18 +63,10 @@ function truncateErrorMessage(value: unknown, maxLength = 1024) {
   return text.slice(0, maxLength);
 }
 
-function resolveTariffPerPackageKopecks(input: {
-  organizationTariffPerPackageKopecks: bigint;
-  organizationUserTarif: number | null;
-}) {
-  if (input.organizationUserTarif != null && Number.isFinite(input.organizationUserTarif) && input.organizationUserTarif > 0) {
-    return legacyRublesToKopecks(input.organizationUserTarif);
+function resolveTariffPerPackageRubles(organizationUserTarif: bigint) {
+  if (organizationUserTarif > 0n) {
+    return organizationUserTarif;
   }
-
-  if (input.organizationTariffPerPackageKopecks > 0n) {
-    return input.organizationTariffPerPackageKopecks;
-  }
-
   return 0n;
 }
 
@@ -261,7 +252,7 @@ export function parsePackagesCountFromText(rawText: string) {
 }
 
 export function getTopupPaymentLinkMessage(topup: {
-  amountKopecks: bigint;
+  amountRubles: bigint;
   providerConfirmationUrl: string | null;
 }) {
   const url = topup.providerConfirmationUrl || "(ссылка недоступна)";
@@ -269,11 +260,11 @@ export function getTopupPaymentLinkMessage(topup: {
 }
 
 export function getActiveTopupUserMessage(topup: {
-  amountKopecks: bigint;
+  amountRubles: bigint;
   providerConfirmationUrl: string | null;
   expiresAt: Date;
 }) {
-  const amountRub = formatKopecksAsRubles(topup.amountKopecks);
+  const amountRub = formatRubles(topup.amountRubles);
   const url = topup.providerConfirmationUrl || "(ссылка недоступна)";
   const expiresAt = formatMoscowDateTime(topup.expiresAt);
 
@@ -307,7 +298,7 @@ export async function assertNoActiveTopupForUser(userIdRaw: string | bigint) {
 
   throw new AppError(getActiveTopupUserMessage(activeTopup), 409, PAYMENT_ERROR_CODES.ACTIVE_TOPUP_PENDING, {
     topupId: activeTopup.id,
-    amountKopecks: activeTopup.amountKopecks.toString(),
+    amountRubles: activeTopup.amountRubles.toString(),
     providerConfirmationUrl: activeTopup.providerConfirmationUrl,
     expiresAt: activeTopup.expiresAt.toISOString()
   });
@@ -341,16 +332,13 @@ export async function createOrReuseTopupForUser(input: {
     throw new AppError("Organization is required for topup.", 409, "ORG_REQUIRED");
   }
 
-  const tariffPerPackageKopecks = resolveTariffPerPackageKopecks({
-    organizationTariffPerPackageKopecks: user.organization.tariffPerPackageKopecks,
-    organizationUserTarif: user.organization.userTarif
-  });
+  const tariffPerPackageRubles = resolveTariffPerPackageRubles(user.organization.userTarif);
 
-  if (tariffPerPackageKopecks <= 0n) {
+  if (tariffPerPackageRubles <= 0n) {
     throw new AppError("Тариф организации не настроен.", 409, "ORG_TARIFF_NOT_CONFIGURED");
   }
 
-  const amountKopecks = BigInt(input.packagesCount) * tariffPerPackageKopecks;
+  const amountRubles = BigInt(input.packagesCount) * tariffPerPackageRubles;
   const now = new Date();
   const expiresAt = new Date(now.getTime() + env.TOPUP_LINK_TTL_SECONDS * 1000);
   const idempotenceKey = yookassaClient.generateIdempotenceKey();
@@ -364,8 +352,8 @@ export async function createOrReuseTopupForUser(input: {
         userId,
         status: TOPUP_STATUS.AWAITING_PAYMENT,
         packagesCount: input.packagesCount,
-        tariffPerPackageKopecks,
-        amountKopecks,
+        tariffPerPackageRubles,
+        amountRubles,
         currency: env.YOOKASSA_CURRENCY,
         provider: "yookassa",
         providerStatus: "created_local",
@@ -398,7 +386,7 @@ export async function createOrReuseTopupForUser(input: {
   try {
     const description = `Пополнение баланса организации на ${input.packagesCount} пакетов`;
 
-    const amountValue = kopecksToYookassaAmount(amountKopecks);
+    const amountValue = rublesToYookassaAmount(amountRubles);
     const receiptCustomer = resolveReceiptCustomer({
       userPhone: user.phone,
       userOrgEmail: user.orgEmail,
@@ -421,7 +409,7 @@ export async function createOrReuseTopupForUser(input: {
           organization_id: user.organizationId.toString(),
           user_id: user.id.toString(),
           packages_count: String(input.packagesCount),
-          tariff_per_package_kopecks: tariffPerPackageKopecks.toString(),
+          tariff_per_package_rubles: tariffPerPackageRubles.toString(),
           internal_topup_id: topup.id
         },
         receipt: {
@@ -566,7 +554,7 @@ export async function upsertTopupPaymentAttempt(input: {
   payment: YookassaPayment;
   rawPayload?: unknown;
 }) {
-  const amountKopecks = parseYookassaAmountToKopecks(String(input.payment.amount?.value ?? "0.00"));
+  const amountRubles = parseYookassaAmountToRubles(String(input.payment.amount?.value ?? "0.00"));
   const status = String(input.payment.status || "unknown");
   const paid = status === "succeeded" || input.payment.paid === true;
   const paidAt = parseDateOrNull(input.payment.paid_at) ?? parseDateOrNull(input.payment.captured_at);
@@ -581,7 +569,7 @@ export async function upsertTopupPaymentAttempt(input: {
       providerInvoiceId: null,
       providerPaymentId: input.payment.id,
       status,
-      amountKopecks,
+      amountRubles,
       currency: String(input.payment.amount?.currency || env.YOOKASSA_CURRENCY),
       paid,
       cancellationParty: input.payment.cancellation_details?.party ?? null,
@@ -594,7 +582,7 @@ export async function upsertTopupPaymentAttempt(input: {
       topupId: input.topupId,
       providerInvoiceId: null,
       status,
-      amountKopecks,
+      amountRubles,
       currency: String(input.payment.amount?.currency || env.YOOKASSA_CURRENCY),
       paid,
       cancellationParty: input.payment.cancellation_details?.party ?? null,
@@ -650,9 +638,9 @@ export async function finalizeTopupAsPaid(input: {
         status: string;
         organization_id: bigint;
         user_id: bigint;
-        amount_kopecks: bigint;
+        amount_rubles: bigint;
       }>
-    >`SELECT id, status, organization_id, user_id, amount_kopecks FROM organization_topups WHERE id = ${input.topupId} FOR UPDATE`;
+    >`SELECT id, status, organization_id, user_id, amount_rubles FROM organization_topups WHERE id = ${input.topupId} FOR UPDATE`;
 
     const topup = topupRows[0];
     if (!topup) {
@@ -668,8 +656,8 @@ export async function finalizeTopupAsPaid(input: {
       return;
     }
 
-    const organizations = await tx.$queryRaw<Array<{ org_id: bigint; balance_kopecks: bigint }>>`
-      SELECT org_id, balance_kopecks
+    const organizations = await tx.$queryRaw<Array<{ org_id: bigint; balance: bigint }>>`
+      SELECT org_id, balance
       FROM organizations
       WHERE org_id = ${topup.organization_id}
       FOR UPDATE
@@ -680,14 +668,14 @@ export async function finalizeTopupAsPaid(input: {
       throw new AppError("Organization not found.", 404, "ORG_NOT_FOUND");
     }
 
-    const balanceBefore = BigInt(organization.balance_kopecks);
-    const amount = BigInt(topup.amount_kopecks);
+    const balanceBefore = BigInt(organization.balance);
+    const amount = BigInt(topup.amount_rubles);
     const balanceAfter = balanceBefore + amount;
 
     await tx.organization.update({
       where: { id: topup.organization_id },
       data: {
-        balanceKopecks: balanceAfter
+        balance: balanceAfter
       }
     });
 
@@ -695,9 +683,9 @@ export async function finalizeTopupAsPaid(input: {
       data: {
         organizationId: topup.organization_id,
         direction: "credit",
-        amountKopecks: amount,
-        balanceBeforeKopecks: balanceBefore,
-        balanceAfterKopecks: balanceAfter,
+        amountRubles: amount,
+        balanceBeforeRubles: balanceBefore,
+        balanceAfterRubles: balanceAfter,
         sourceType: "topup",
         sourceId: topup.id,
         createdByUserId: topup.user_id,
@@ -1082,4 +1070,5 @@ export async function fetchPaymentForWebhookObject(input: {
 
   return yookassaClient.getPayment(paymentId);
 }
+
 

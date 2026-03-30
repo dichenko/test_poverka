@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import {
   createUser,
@@ -40,29 +40,7 @@ function StatusScreen({ title, description, code }) {
   );
 }
 
-function parseKopecks(raw) {
-  if (raw == null || raw === "") {
-    return null;
-  }
-  try {
-    const parsed = BigInt(raw);
-    return parsed >= 0n ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function formatRemainingPackages(balance, tarif, balanceKopecks, tariffKopecks) {
-  const bKopecks = parseKopecks(balanceKopecks);
-  const tKopecks = parseKopecks(tariffKopecks);
-  if (bKopecks != null && tKopecks != null && tKopecks > 0n) {
-    const value = Number(bKopecks) / Number(tKopecks);
-    if (!Number.isFinite(value) || value < 0) {
-      return "-";
-    }
-    return value.toFixed(1).replace(/\.0$/, "");
-  }
-
+function formatRemainingPackages(balance, tarif) {
   const b = Number(balance);
   const t = Number(tarif);
   if (!Number.isFinite(b) || !Number.isFinite(t) || t <= 0) {
@@ -75,13 +53,7 @@ function formatRemainingPackages(balance, tarif, balanceKopecks, tariffKopecks) 
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
-function hasEnoughBalance(balance, tarif, balanceKopecks, tariffKopecks) {
-  const bKopecks = parseKopecks(balanceKopecks);
-  const tKopecks = parseKopecks(tariffKopecks);
-  if (bKopecks != null && tKopecks != null && tKopecks > 0n) {
-    return bKopecks >= tKopecks;
-  }
-
+function hasEnoughBalance(balance, tarif) {
   const b = Number(balance);
   const t = Number(tarif);
   if (!Number.isFinite(b) || !Number.isFinite(t) || t <= 0) {
@@ -591,18 +563,8 @@ function AdminPanel({ accessToken }) {
 
 export default function App() {
   const { loading, accessToken, user, maxUserId, error, errorCode } = useAuth();
-  const packagesCount = formatRemainingPackages(
-    user?.organizationBalance,
-    user?.organizationTarif,
-    user?.organizationBalanceKopecks,
-    user?.organizationTariffPerPackageKopecks
-  );
-  const canSubmitInitially = hasEnoughBalance(
-    user?.organizationBalance,
-    user?.organizationTarif,
-    user?.organizationBalanceKopecks,
-    user?.organizationTariffPerPackageKopecks
-  );
+  const packagesCount = formatRemainingPackages(user?.organizationBalance, user?.organizationTarif);
+  const canSubmitInitially = hasEnoughBalance(user?.organizationBalance, user?.organizationTarif);
 
   if (loading) {
     return <StatusScreen title="Загрузка" description="Выполняется авторизация через MAX WebApp..." />;

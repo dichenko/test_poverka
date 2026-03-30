@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import { validate } from "../../common/validate";
 import { requireAuth } from "../../middlewares/auth";
@@ -10,13 +10,6 @@ import { verifyMaxInitData } from "./max-init-data";
 const handshakeSchema = z.object({
   initData: z.string().min(10)
 });
-
-function kopecksToLegacyRubles(value: bigint | null | undefined) {
-  if (value == null) {
-    return null;
-  }
-  return Number(value) / 100;
-}
 
 const router = Router();
 
@@ -73,11 +66,8 @@ router.get("/auth/me", requireAuth, async (req, res, next) => {
         role: user.role,
         organizationId: user.organizationId?.toString() ?? null,
         organizationName: user.organization?.name ?? null,
-        organizationBalance: user.organization?.balance ?? kopecksToLegacyRubles(user.organization?.balanceKopecks) ?? null,
-        organizationTarif:
-          user.organization?.userTarif ?? kopecksToLegacyRubles(user.organization?.tariffPerPackageKopecks) ?? null,
-        organizationBalanceKopecks: user.organization?.balanceKopecks?.toString() ?? null,
-        organizationTariffPerPackageKopecks: user.organization?.tariffPerPackageKopecks?.toString() ?? null
+        organizationBalance: user.organization?.balance?.toString() ?? null,
+        organizationTarif: user.organization?.userTarif?.toString() ?? null
       }
     });
   } catch (error) {

@@ -1,16 +1,13 @@
 import { AppError } from "../../common/app-error";
 
-export function kopecksToYookassaAmount(kopecks: bigint): string {
-  if (kopecks < 0n) {
+export function rublesToYookassaAmount(rubles: bigint): string {
+  if (rubles < 0n) {
     throw new AppError("Negative amount is not allowed.", 500, "PAYMENT_AMOUNT_NEGATIVE");
   }
-
-  const rubles = kopecks / 100n;
-  const cents = kopecks % 100n;
-  return `${rubles.toString()}.${cents.toString().padStart(2, "0")}`;
+  return `${rubles.toString()}.00`;
 }
 
-export function parseYookassaAmountToKopecks(value: string): bigint {
+export function parseYookassaAmountToRubles(value: string): bigint {
   const normalized = value.trim();
   if (!/^\d+(\.\d{1,2})?$/.test(normalized)) {
     throw new AppError("Unsupported YooKassa amount format.", 500, "PAYMENT_AMOUNT_INVALID", { value });
@@ -18,21 +15,17 @@ export function parseYookassaAmountToKopecks(value: string): bigint {
 
   const [rublesRaw, centsRaw = ""] = normalized.split(".");
   const rubles = BigInt(rublesRaw);
-  const cents = BigInt(centsRaw.padEnd(2, "0"));
-  return rubles * 100n + cents;
-}
+  const cents = centsRaw.padEnd(2, "0");
 
-export function formatKopecksAsRubles(kopecks: bigint): string {
-  const sign = kopecks < 0n ? "-" : "";
-  const absolute = kopecks < 0n ? kopecks * -1n : kopecks;
-  const rubles = absolute / 100n;
-  const cents = absolute % 100n;
-  return `${sign}${rubles.toString()}.${cents.toString().padStart(2, "0")}`;
-}
-
-export function legacyRublesToKopecks(value: number | null | undefined): bigint {
-  if (value == null || !Number.isFinite(value)) {
-    return 0n;
+  if (cents !== "00") {
+    throw new AppError("Amount with fractional rubles is not supported.", 500, "PAYMENT_AMOUNT_WITH_KOPECKS", {
+      value
+    });
   }
-  return BigInt(Math.max(0, Math.round(value * 100)));
+
+  return rubles;
+}
+
+export function formatRubles(rubles: bigint): string {
+  return rubles.toString();
 }

@@ -1,4 +1,4 @@
-﻿import { UserRole } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import type { Request, Response } from "express";
 import { AppError } from "../../common/app-error";
 import { prisma } from "../../common/prisma";
@@ -23,13 +23,6 @@ function parseUserId(raw: string): bigint {
   } catch {
     throw new AppError("Invalid MAX user id.", 400, "MAX_USER_ID_INVALID");
   }
-}
-
-function kopecksToLegacyRubles(value: bigint | null | undefined) {
-  if (value == null) {
-    return null;
-  }
-  return Number(value) / 100;
 }
 
 export async function createAuthSession(input: {
@@ -120,11 +113,8 @@ export async function createAuthSession(input: {
       role: user.role,
       organizationId: user.organizationId?.toString() ?? null,
       organizationName: user.organization?.name ?? null,
-      organizationBalance: user.organization?.balance ?? kopecksToLegacyRubles(user.organization?.balanceKopecks) ?? null,
-      organizationTarif:
-        user.organization?.userTarif ?? kopecksToLegacyRubles(user.organization?.tariffPerPackageKopecks) ?? null,
-      organizationBalanceKopecks: user.organization?.balanceKopecks?.toString() ?? null,
-      organizationTariffPerPackageKopecks: user.organization?.tariffPerPackageKopecks?.toString() ?? null
+      organizationBalance: user.organization?.balance?.toString() ?? null,
+      organizationTarif: user.organization?.userTarif?.toString() ?? null
     }
   };
 }

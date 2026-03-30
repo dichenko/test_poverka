@@ -1,4 +1,4 @@
-﻿import { PrismaClient, SubmissionSource, SubmissionStatus, UserRole } from "@prisma/client";
+import { PrismaClient, SubmissionSource, SubmissionStatus, UserRole } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -7,20 +7,16 @@ async function main() {
     where: { email: "org@poverka-bot.ru" },
     update: {
       name: "OOO Poverka Test",
-      balance: 50000,
-      balanceStartOfDay: 12000,
-      userTarif: 1250,
-      balanceKopecks: 5000000n,
-      tariffPerPackageKopecks: 125000n
+      balance: 50000n,
+      balanceStartOfDay: 12000n,
+      userTarif: 1250n
     },
     create: {
       name: "OOO Poverka Test",
       email: "org@poverka-bot.ru",
-      balance: 50000,
-      balanceStartOfDay: 12000,
-      userTarif: 1250,
-      balanceKopecks: 5000000n,
-      tariffPerPackageKopecks: 125000n
+      balance: 50000n,
+      balanceStartOfDay: 12000n,
+      userTarif: 1250n
     }
   });
 

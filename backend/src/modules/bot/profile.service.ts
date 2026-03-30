@@ -2,41 +2,18 @@ import { maxBotClient } from "./max-bot.client";
 import { prisma } from "../../common/prisma";
 import { buildUserProfileMessage } from "./profile.builder";
 
-function legacyRublesToKopecks(value: number | null | undefined): bigint {
-  if (value == null || !Number.isFinite(value)) {
-    return 0n;
-  }
-  return BigInt(Math.max(0, Math.round(value * 100)));
-}
-
-function resolveTariffKopecks(input: {
-  organizationTariffKopecks: bigint;
-  organizationTariffLegacy: number | null;
-}): bigint {
-  if (
-    input.organizationTariffLegacy != null &&
-    Number.isFinite(input.organizationTariffLegacy) &&
-    input.organizationTariffLegacy > 0
-  ) {
-    return legacyRublesToKopecks(input.organizationTariffLegacy);
-  }
-  if (input.organizationTariffKopecks > 0n) {
-    return input.organizationTariffKopecks;
-  }
-  return 0n;
-}
-
-function formatRemainingPackages(balanceKopecks: bigint, tariffKopecks: bigint): string {
-  if (balanceKopecks <= 0n || tariffKopecks <= 0n) {
+function formatRemainingPackages(balanceRubles: bigint, tariffRubles: bigint): string {
+  if (balanceRubles <= 0n || tariffRubles <= 0n) {
     return "0";
   }
 
-  const ratio = Number(balanceKopecks) / Number(tariffKopecks);
-  if (!Number.isFinite(ratio) || ratio < 0) {
-    return "0";
+  const scaled = (balanceRubles * 10n) / tariffRubles;
+  const integerPart = scaled / 10n;
+  const fraction = scaled % 10n;
+  if (fraction === 0n) {
+    return integerPart.toString();
   }
-
-  return ratio.toFixed(1).replace(/\.0$/, "");
+  return `${integerPart.toString()}.${fraction.toString()}`;
 }
 
 export interface UserProfilePayload {
@@ -60,13 +37,10 @@ export async function getUserProfilePayload(userId: bigint): Promise<UserProfile
     return null;
   }
 
-  const organizationBalanceKopecks = user.organization?.balanceKopecks ?? legacyRublesToKopecks(user.organization?.balance);
-  const tariffKopecks = resolveTariffKopecks({
-    organizationTariffKopecks: user.organization?.tariffPerPackageKopecks ?? 0n,
-    organizationTariffLegacy: user.organization?.userTarif ?? null
-  });
+  const organizationBalanceRubles = user.organization?.balance ?? 0n;
+  const tariffRubles = user.organization?.userTarif ?? 0n;
 
-  const remainingPackages = formatRemainingPackages(organizationBalanceKopecks, tariffKopecks);
+  const remainingPackages = formatRemainingPackages(organizationBalanceRubles, tariffRubles);
 
   const profile = buildUserProfileMessage({
     maxUserId: user.id.toString(),

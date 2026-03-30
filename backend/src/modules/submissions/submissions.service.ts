@@ -1,7 +1,6 @@
 import { SubmissionStatus, type UserRole, type WaterType } from "@prisma/client";
 import { AppError } from "../../common/app-error";
 import { prisma } from "../../common/prisma";
-import { legacyRublesToKopecks } from "../payments/money";
 
 const INSUFFICIENT_BALANCE_MESSAGE =
   "Недостаточно средств на балансе организации. Отправка не выполнена. Пополните баланс и попробуйте снова.";
@@ -15,58 +14,21 @@ function parseMeterValue(rawValue: string) {
   return normalized;
 }
 
-function resolveTariffKopecks(input: {
-  tariffPerPackageKopecks: bigint;
-  userTarifLegacy: number | null;
-}): bigint {
-  if (input.userTarifLegacy != null && Number.isFinite(input.userTarifLegacy) && input.userTarifLegacy > 0) {
-    return legacyRublesToKopecks(input.userTarifLegacy);
-  }
-
-  if (input.tariffPerPackageKopecks > 0n) {
-    return input.tariffPerPackageKopecks;
-  }
-
-  return 0n;
-}
-
-function resolveBalanceKopecks(input: {
-  balanceKopecks: bigint;
-  balanceLegacy: number | null;
-}) {
-  if (input.balanceKopecks > 0n) {
-    return input.balanceKopecks;
-  }
-  return legacyRublesToKopecks(input.balanceLegacy);
-}
-
 function ensureOrganizationCanSubmit(input: {
-  balanceKopecks: bigint;
-  tariffPerPackageKopecks: bigint;
-  tariffLegacy: number | null;
-  balanceLegacy: number | null;
+  balanceRubles: bigint;
+  tariffRubles: bigint;
 }) {
-  const tariffKopecks = resolveTariffKopecks({
-    tariffPerPackageKopecks: input.tariffPerPackageKopecks,
-    userTarifLegacy: input.tariffLegacy
-  });
-
-  if (tariffKopecks <= 0n) {
+  if (input.tariffRubles <= 0n) {
     throw new AppError("Тариф организации не настроен.", 409, "ORG_TARIF_NOT_CONFIGURED");
   }
 
-  const balanceKopecks = resolveBalanceKopecks({
-    balanceKopecks: input.balanceKopecks,
-    balanceLegacy: input.balanceLegacy
-  });
-
-  if (balanceKopecks < tariffKopecks) {
+  if (input.balanceRubles < input.tariffRubles) {
     throw new AppError(INSUFFICIENT_BALANCE_MESSAGE, 409, "INSUFFICIENT_BALANCE");
   }
 
   return {
-    balanceKopecks,
-    tariffKopecks
+    balanceRubles: input.balanceRubles,
+    tariffRubles: input.tariffRubles
   };
 }
 
@@ -108,10 +70,8 @@ export async function createDraftSubmission(input: {
   }
 
   ensureOrganizationCanSubmit({
-    balanceKopecks: user.organization.balanceKopecks,
-    tariffPerPackageKopecks: user.organization.tariffPerPackageKopecks,
-    tariffLegacy: user.organization.userTarif,
-    balanceLegacy: user.organization.balance
+    balanceRubles: user.organization.balance,
+    tariffRubles: user.organization.userTarif
   });
 
   const currentValue = parseMeterValue(input.reading);
@@ -251,13 +211,11 @@ export async function confirmSubmission(input: {
     const orgRows = await tx.$queryRaw<
       Array<{
         org_id: bigint;
-        balance_kopecks: bigint;
-        tariff_per_package_kopecks: bigint;
-        balance: number | null;
-        user_tarif: number | null;
+        balance: bigint;
+        user_tarif: bigint;
       }>
     >`
-      SELECT org_id, balance_kopecks, tariff_per_package_kopecks, balance, user_tarif
+      SELECT org_id, balance, user_tarif
       FROM organizations
       WHERE org_id = ${submission.organizationId}
       FOR UPDATE
@@ -268,19 +226,17 @@ export async function confirmSubmission(input: {
       throw new AppError("Organization not found.", 404, "ORG_NOT_FOUND");
     }
 
-    const { balanceKopecks, tariffKopecks } = ensureOrganizationCanSubmit({
-      balanceKopecks: BigInt(organization.balance_kopecks),
-      tariffPerPackageKopecks: BigInt(organization.tariff_per_package_kopecks),
-      tariffLegacy: organization.user_tarif,
-      balanceLegacy: organization.balance
+    const { balanceRubles, tariffRubles } = ensureOrganizationCanSubmit({
+      balanceRubles: BigInt(organization.balance),
+      tariffRubles: BigInt(organization.user_tarif)
     });
 
-    const balanceAfterKopecks = balanceKopecks - tariffKopecks;
+    const balanceAfterRubles = balanceRubles - tariffRubles;
 
     await tx.organization.update({
       where: { id: submission.organizationId },
       data: {
-        balanceKopecks: balanceAfterKopecks
+        balance: balanceAfterRubles
       }
     });
 
@@ -288,9 +244,9 @@ export async function confirmSubmission(input: {
       data: {
         organizationId: submission.organizationId,
         direction: "debit",
-        amountKopecks: tariffKopecks,
-        balanceBeforeKopecks: balanceKopecks,
-        balanceAfterKopecks,
+        amountRubles: tariffRubles,
+        balanceBeforeRubles: balanceRubles,
+        balanceAfterRubles,
         sourceType: "action_spend",
         sourceId: submission.id,
         createdByUserId: actorUserId,
@@ -313,7 +269,7 @@ export async function confirmSubmission(input: {
         userId: submission.userId,
         organizationId: submission.organizationId,
         submissionId: submission.id,
-        amountKopecks: tariffKopecks
+        amountRubles: tariffRubles
       }
     });
 
@@ -519,3 +475,5 @@ export async function getLatestPendingSubmission(userId: string) {
     orderBy: { createdAt: "desc" }
   });
 }
+
+

@@ -39,14 +39,12 @@ enum AuditEntityType {
 }
 
 model Organization {
-  id                      BigInt  @id @default(autoincrement()) @map("org_id")
-  balance                 Float?  @db.DoublePrecision
-  email                   String? @unique @map("org_email")
-  name                    String  @map("org_name")
-  balanceStartOfDay       Float?  @map("balance_start_of_day") @db.DoublePrecision
-  userTarif               Float?  @map("user_tarif") @db.DoublePrecision
-  balanceKopecks          BigInt  @default(0) @map("balance_kopecks")
-  tariffPerPackageKopecks BigInt  @default(0) @map("tariff_per_package_kopecks")
+  id                BigInt  @id @default(autoincrement()) @map("org_id")
+  balance           BigInt  @default(0)
+  email             String? @unique @map("org_email")
+  name              String  @map("org_name")
+  balanceStartOfDay BigInt? @map("balance_start_of_day")
+  userTarif         BigInt  @default(0) @map("user_tarif")
 
   users               User[]
   submissions         MeterSubmission[]
@@ -208,7 +206,7 @@ model SubmissionBillingEvent {
   userId         BigInt   @map("user_id")
   organizationId BigInt   @map("organization_id")
   submissionId   String   @unique @map("submission_id")
-  amountKopecks  BigInt   @default(0) @map("amount_kopecks")
+  amountRubles   BigInt   @default(0) @map("amount_rubles")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   user         User            @relation(fields: [userId], references: [id])
@@ -231,30 +229,30 @@ model EquipmentType {
 }
 
 model OrganizationTopup {
-  id                      String    @id @default(uuid()) @db.Uuid
-  organizationId          BigInt    @map("organization_id")
-  userId                  BigInt    @map("user_id")
-  status                  String
-  packagesCount           Int       @map("packages_count")
-  tariffPerPackageKopecks BigInt    @map("tariff_per_package_kopecks")
-  amountKopecks           BigInt    @map("amount_kopecks")
-  currency                String    @default("RUB")
-  provider                String    @default("yookassa")
+  id                     String    @id @default(uuid()) @db.Uuid
+  organizationId         BigInt    @map("organization_id")
+  userId                 BigInt    @map("user_id")
+  status                 String
+  packagesCount          Int       @map("packages_count")
+  tariffPerPackageRubles BigInt    @map("tariff_per_package_rubles")
+  amountRubles           BigInt    @map("amount_rubles")
+  currency               String    @default("RUB")
+  provider               String    @default("yookassa")
   providerConfirmationUrl String?   @map("provider_confirmation_url")
-  providerPaymentId       String?   @map("provider_payment_id")
-  providerStatus          String?   @map("provider_status")
-  providerIdempotenceKey  String?   @map("provider_idempotence_key")
-  expiresAt               DateTime  @map("expires_at") @db.Timestamptz(3)
-  paidAt                  DateTime? @map("paid_at") @db.Timestamptz(3)
-  canceledAt              DateTime? @map("canceled_at") @db.Timestamptz(3)
-  cancelReasonCode        String?   @map("cancel_reason_code")
-  cancelReasonText        String?   @map("cancel_reason_text")
-  lastProviderSyncAt      DateTime? @map("last_provider_sync_at") @db.Timestamptz(3)
-  nextPollAt              DateTime? @map("next_poll_at") @db.Timestamptz(3)
-  pollAttempts            Int       @default(0) @map("poll_attempts")
-  errorMessage            String?   @map("error_message")
-  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  providerPaymentId      String?   @map("provider_payment_id")
+  providerStatus         String?   @map("provider_status")
+  providerIdempotenceKey String?   @map("provider_idempotence_key")
+  expiresAt              DateTime  @map("expires_at") @db.Timestamptz(3)
+  paidAt                 DateTime? @map("paid_at") @db.Timestamptz(3)
+  canceledAt             DateTime? @map("canceled_at") @db.Timestamptz(3)
+  cancelReasonCode       String?   @map("cancel_reason_code")
+  cancelReasonText       String?   @map("cancel_reason_text")
+  lastProviderSyncAt     DateTime? @map("last_provider_sync_at") @db.Timestamptz(3)
+  nextPollAt             DateTime? @map("next_poll_at") @db.Timestamptz(3)
+  pollAttempts           Int       @default(0) @map("poll_attempts")
+  errorMessage           String?   @map("error_message")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization Organization                      @relation(fields: [organizationId], references: [id])
   user         User                              @relation(fields: [userId], references: [id])
@@ -267,17 +265,17 @@ model OrganizationTopup {
 }
 
 model OrganizationBalanceTransaction {
-  id                   String   @id @default(uuid()) @db.Uuid
-  organizationId       BigInt   @map("organization_id")
-  direction            String
-  amountKopecks        BigInt   @map("amount_kopecks")
-  balanceBeforeKopecks BigInt   @map("balance_before_kopecks")
-  balanceAfterKopecks  BigInt   @map("balance_after_kopecks")
-  sourceType           String   @map("source_type")
-  sourceId             String   @map("source_id")
-  createdByUserId      BigInt?  @map("created_by_user_id")
-  comment              String?
-  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      BigInt   @map("organization_id")
+  direction           String
+  amountRubles        BigInt   @map("amount_rubles")
+  balanceBeforeRubles BigInt   @map("balance_before_rubles")
+  balanceAfterRubles  BigInt   @map("balance_after_rubles")
+  sourceType          String   @map("source_type")
+  sourceId            String   @map("source_id")
+  createdByUserId     BigInt?  @map("created_by_user_id")
+  comment             String?
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   organization  Organization @relation(fields: [organizationId], references: [id])
   createdByUser User?        @relation("BalanceTransactionCreatedBy", fields: [createdByUserId], references: [id])
@@ -293,7 +291,7 @@ model OrganizationTopupPaymentAttempt {
   providerInvoiceId  String?   @map("provider_invoice_id")
   providerPaymentId  String    @unique @map("provider_payment_id")
   status             String
-  amountKopecks      BigInt    @map("amount_kopecks")
+  amountRubles       BigInt    @map("amount_rubles")
   currency           String    @default("RUB")
   paid               Boolean   @default(false)
   cancellationParty  String?   @map("cancellation_party")

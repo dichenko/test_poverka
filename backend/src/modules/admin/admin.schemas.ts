@@ -1,4 +1,4 @@
-﻿import { UserRole } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import { z } from "zod";
 
 export const adminListUsersQuerySchema = z.object({
@@ -51,9 +51,7 @@ export const adminOrgParamsSchema = z.object({
 export const adminUpdateOrganizationSchema = z.object({
   name: z.string().trim().min(2).optional(),
   email: z.string().email().optional().nullable(),
-  balance: z.number().nonnegative().nullable().optional(),
-  balanceStartOfDay: z.number().nonnegative().nullable().optional(),
-  userTarif: z.number().nonnegative().nullable().optional(),
-  balanceKopecks: z.coerce.bigint().nonnegative().optional(),
-  tariffPerPackageKopecks: z.coerce.bigint().nonnegative().optional()
+  balance: z.coerce.bigint().nonnegative().optional(),
+  balanceStartOfDay: z.union([z.coerce.bigint().nonnegative(), z.null()]).optional(),
+  userTarif: z.coerce.bigint().nonnegative().optional()
 });

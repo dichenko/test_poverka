@@ -26,8 +26,8 @@ function makeTopup(overrides: Partial<any> = {}) {
     userId: 101n,
     status: "awaiting_payment",
     packagesCount: 2,
-    tariffPerPackageKopecks: 150n,
-    amountKopecks: 300n,
+    tariffPerPackageRubles: 150n,
+    amountRubles: 300n,
     currency: "RUB",
     provider: "yookassa",
     providerPaymentId: "pay_1",
@@ -53,10 +53,8 @@ function makeTopup(overrides: Partial<any> = {}) {
     organization: {
       id: 77n,
       name: "Org",
-      balanceKopecks: 1000n,
-      tariffPerPackageKopecks: 150n,
-      userTarif: null,
-      balance: null
+      balance: 1000n,
+      userTarif: 150n
     },
     ...overrides
   };
@@ -122,8 +120,8 @@ async function loadService() {
 
   const mockProfileService: any = {
     getUserProfilePayload: vi.fn(async () => ({
-      text: "Профиль пользователя:\n...",
-      attachments: [{ type: "inline_keyboard", payload: { buttons: [[{ text: "Пополнить баланс", payload: "topup_balance" }]] } }]
+      text: "Profile:\n...",
+      attachments: [{ type: "inline_keyboard", payload: { buttons: [[{ text: "Top up balance", payload: "topup_balance" }]] } }]
     }))
   };
 
@@ -196,17 +194,15 @@ describe("topups.service", () => {
       organization: {
         id: 77n,
         email: "org@example.com",
-        tariffPerPackageKopecks: 200n,
-        userTarif: null,
-        balanceKopecks: 1000n,
-        balance: null
+        userTarif: 200n,
+        balance: 1000n
       }
     });
 
     const createdTopup = makeTopup({
       id: "0ec4ac2f-8242-46a9-8ed2-0684e5b2100d",
-      amountKopecks: 400n,
-      tariffPerPackageKopecks: 200n,
+      amountRubles: 400n,
+      tariffPerPackageRubles: 200n,
       packagesCount: 2,
       providerPaymentId: null,
       providerConfirmationUrl: null
@@ -249,18 +245,16 @@ describe("topups.service", () => {
       organization: {
         id: 77n,
         email: "org@example.com",
-        tariffPerPackageKopecks: 200n,
-        userTarif: null,
-        balanceKopecks: 1000n,
-        balance: null
+        userTarif: 200n,
+        balance: 1000n
       }
     });
 
     mockPrisma.organizationTopup.create.mockResolvedValue(
       makeTopup({
         id: "0ec4ac2f-8242-46a9-8ed2-0684e5b2100d",
-        amountKopecks: 400n,
-        tariffPerPackageKopecks: 200n,
+        amountRubles: 400n,
+        tariffPerPackageRubles: 200n,
         packagesCount: 2,
         providerPaymentId: null,
         providerConfirmationUrl: null
@@ -297,18 +291,16 @@ describe("topups.service", () => {
       organization: {
         id: 77n,
         email: null,
-        tariffPerPackageKopecks: 200n,
-        userTarif: null,
-        balanceKopecks: 1000n,
-        balance: null
+        userTarif: 200n,
+        balance: 1000n
       }
     });
 
     mockPrisma.organizationTopup.create.mockResolvedValue(
       makeTopup({
         id: "88f247f0-99ec-4792-8f66-aef7e9f35e00",
-        amountKopecks: 400n,
-        tariffPerPackageKopecks: 200n,
+        amountRubles: 400n,
+        tariffPerPackageRubles: 200n,
         packagesCount: 2,
         providerPaymentId: null,
         providerConfirmationUrl: null
@@ -335,18 +327,16 @@ describe("topups.service", () => {
       organization: {
         id: 77n,
         email: "org@example.com",
-        tariffPerPackageKopecks: 150n,
-        userTarif: null,
-        balanceKopecks: 1000n,
-        balance: null
+        userTarif: 150n,
+        balance: 1000n
       }
     });
 
     const createdTopup = makeTopup({
       id: "63bc55d5-d9da-42f7-b5db-07cb5170065f",
       packagesCount: 2,
-      tariffPerPackageKopecks: 150n,
-      amountKopecks: 300n,
+      tariffPerPackageRubles: 150n,
+      amountRubles: 300n,
       providerPaymentId: null,
       providerConfirmationUrl: null
     });
@@ -363,11 +353,11 @@ describe("topups.service", () => {
 
     const result = await service.createOrReuseTopupForUser({ userIdRaw: "101", packagesCount: 2 });
 
-    expect(result.topup.tariffPerPackageKopecks).toBe(150n);
-    expect(result.topup.amountKopecks).toBe(300n);
+    expect(result.topup.tariffPerPackageRubles).toBe(150n);
+    expect(result.topup.amountRubles).toBe(300n);
   });
 
-  it("uses organization legacy tariff and ignores user legacy tariff when creating topup", async () => {
+  it("uses organization tariff and ignores user tariff when creating topup", async () => {
     const { service, mockPrisma, mockYookassaClient } = await loadService();
 
     mockPrisma.organizationTopup.findFirst.mockResolvedValue(null);
@@ -380,10 +370,8 @@ describe("topups.service", () => {
       organization: {
         id: 77n,
         email: "org@example.com",
-        tariffPerPackageKopecks: 200n,
-        userTarif: 1,
-        balanceKopecks: 1000n,
-        balance: null
+        userTarif: 100n,
+        balance: 1000n
       }
     });
 
@@ -391,8 +379,8 @@ describe("topups.service", () => {
       makeTopup({
         id: "9b44b985-7398-4533-9e99-2d979f6a4f66",
         packagesCount: 2,
-        tariffPerPackageKopecks: 100n,
-        amountKopecks: 200n,
+        tariffPerPackageRubles: 100n,
+        amountRubles: 200n,
         providerPaymentId: null,
         providerConfirmationUrl: null
       })
@@ -411,8 +399,8 @@ describe("topups.service", () => {
     expect(mockPrisma.organizationTopup.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          tariffPerPackageKopecks: 100n,
-          amountKopecks: 200n
+          tariffPerPackageRubles: 100n,
+          amountRubles: 200n
         })
       })
     );
@@ -435,9 +423,9 @@ describe("topups.service", () => {
   it("ignores duplicate payment.succeeded without double credit", async () => {
     const { service, mockPrisma, mockBotClient } = await loadService();
 
-    const topup = makeTopup({ amountKopecks: 500n });
+    const topup = makeTopup({ amountRubles: 500n });
     let topupStatus = "awaiting_payment";
-    let balanceKopecks = 1000n;
+    let balanceRubles = 1000n;
     let ledgerCreates = 0;
 
     mockPrisma.organizationTopup.findUnique.mockResolvedValue(topup);
@@ -455,15 +443,15 @@ describe("topups.service", () => {
                 status: topupStatus,
                 organization_id: topup.organizationId,
                 user_id: topup.userId,
-                amount_kopecks: topup.amountKopecks
+                amount_rubles: topup.amountRubles
               }
             ];
           }
-          return [{ org_id: topup.organizationId, balance_kopecks: balanceKopecks }];
+          return [{ org_id: topup.organizationId, balance: balanceRubles }];
         }),
         organization: {
           update: vi.fn(async ({ data }: any) => {
-            balanceKopecks = data.balanceKopecks;
+            balanceRubles = data.balance;
             return {};
           })
         },
@@ -500,16 +488,16 @@ describe("topups.service", () => {
     await service.processPaymentSucceeded({ payment, source: "webhook" });
 
     expect(ledgerCreates).toBe(1);
-    expect(balanceKopecks).toBe(1500n);
+    expect(balanceRubles).toBe(1500n);
     expect(mockBotClient.sendMessage).toHaveBeenCalledTimes(2);
   });
 
   it("is idempotent under concurrent finalization", async () => {
     const { service, mockPrisma } = await loadService();
 
-    const topup = makeTopup({ amountKopecks: 700n });
+    const topup = makeTopup({ amountRubles: 700n });
     let topupStatus = "awaiting_payment";
-    let balanceKopecks = 1000n;
+    let balanceRubles = 1000n;
     let ledgerCreates = 0;
     let txQueue = Promise.resolve();
 
@@ -526,15 +514,15 @@ describe("topups.service", () => {
                   status: topupStatus,
                   organization_id: topup.organizationId,
                   user_id: topup.userId,
-                  amount_kopecks: topup.amountKopecks
+                  amount_rubles: topup.amountRubles
                 }
               ];
             }
-            return [{ org_id: topup.organizationId, balance_kopecks: balanceKopecks }];
+            return [{ org_id: topup.organizationId, balance: balanceRubles }];
           }),
           organization: {
             update: vi.fn(async ({ data }: any) => {
-              balanceKopecks = data.balanceKopecks;
+              balanceRubles = data.balance;
               return {};
             })
           },
@@ -566,7 +554,7 @@ describe("topups.service", () => {
 
     expect([first.credited, second.credited].filter(Boolean)).toHaveLength(1);
     expect(ledgerCreates).toBe(1);
-    expect(balanceKopecks).toBe(1700n);
+    expect(balanceRubles).toBe(1700n);
   });
 
   it("closes topup as canceled from payment.canceled", async () => {

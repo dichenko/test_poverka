@@ -16,6 +16,7 @@ Production-ready baseline for MAX bot + miniapp + PostgreSQL.
 - `backend` -> `127.0.0.1:3000`
 - `photo-worker` -> background service (no public port)
 - `payment-worker` -> background service (no public port)
+- `report-worker` -> background service + internal HTTP `127.0.0.1:3010`
 - `miniapp` -> `127.0.0.1:8080`
 
 ## Important infra decision
@@ -62,7 +63,7 @@ Use `deploy.sh`:
 It runs:
 
 - `git pull`
-- `docker compose up -d --build db pgadmin backend photo-worker payment-worker miniapp`
+- `docker compose up -d --build db pgadmin backend photo-worker payment-worker report-worker miniapp`
 
 ## Logs
 
@@ -72,6 +73,7 @@ It runs:
 ./logs.sh
 docker compose logs -f photo-worker
 docker compose logs -f payment-worker
+docker compose logs -f report-worker
 ```
 
 ## Prisma commands
@@ -126,6 +128,81 @@ Quick check after deploy:
 1. Upload photo through bot flow.
 2. `docker compose logs -f photo-worker` and wait for `Photo processed successfully`.
 3. In DB, check `files.processed_at`, `files.compressed_path`, `files.public_url`, `files.processing_error`.
+
+## Report Worker (Excel reports)
+
+`report-worker` is a dedicated service for scheduled Excel generation.
+
+Implemented now:
+
+- Report registry with sequential execution (currently: `arshin`)
+- Daily cron run via `REPORTS_CRON` (default `5 22 * * *`)
+- Timezone-aware logic via `REPORTS_TZ` (default `Europe/Moscow`)
+- PostgreSQL advisory lock + in-memory guard against parallel runs
+- Metadata tracking in DB table `generated_reports`
+- File storage per report code directory
+- Public report links without authorization
+- Manual run both via CLI and internal HTTP endpoint
+
+### Required env vars
+
+```bash
+REPORTS_STORAGE_DIR=/app/storage/reports
+REPORTS_PUBLIC_BASE_URL=https://api.example.com/public/reports
+REPORTS_CRON=5 22 * * *
+REPORTS_TZ=Europe/Moscow
+REPORTS_HTTP_PORT=3010
+REPORTS_LOCK_ID=7342052205
+INTERNAL_API_TOKEN=replace_me_internal_token
+```
+
+`backend` serves generated files from:
+
+- `/public/reports` -> `REPORTS_STORAGE_DIR`
+
+Example output path:
+
+- `/app/storage/reports/arshin/Arshin_2026-03-30.xlsx`
+
+Example public URL:
+
+- `https://api.example.com/public/reports/arshin/Arshin_2026-03-30.xlsx`
+
+### Manual run (CLI)
+
+From `backend` directory:
+
+```bash
+npm run reports:generate -- --report=arshin --date=2026-03-30
+```
+
+Alternative dist command:
+
+```bash
+node dist/report-worker.js generate-report arshin 2026-03-30
+```
+
+### Manual run (HTTP)
+
+```bash
+curl -X POST "http://127.0.0.1:3010/internal/reports/run" \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Token: <INTERNAL_API_TOKEN>" \
+  -d '{"reportCode":"arshin","date":"2026-03-30"}'
+```
+
+If `date` is omitted, report-worker uses current date in `REPORTS_TZ`.
+
+### What `arshin` report does
+
+- File name: `Arshin_YYYY-MM-DD.xlsx`
+- Worksheet name: `Arshin`
+- One row = one `meter_submissions` package
+- Time window by `confirmed_at` (timezone `REPORTS_TZ`):
+  - from `00:01:00`
+  - to `21:59:59`
+- Sort: `confirmed_at ASC`, then `meter_submissions.id ASC`
+- Photos are aggregated into one cell (`string_agg(..., E'\n')`) to avoid duplicate rows.
 
 ## YooKassa Topups
 

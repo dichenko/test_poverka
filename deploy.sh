@@ -10,7 +10,7 @@ echo "==> Pull latest changes"
 git pull
 
 echo "==> Build and run production stack"
-docker compose up -d --build db pgadmin backend photo-worker payment-worker miniapp
+docker compose up -d --build db pgadmin backend photo-worker payment-worker report-worker miniapp
 
 echo "==> Current services"
 docker compose ps

@@ -8,6 +8,15 @@ const defaultYookassaWebhookAllowedIps =
   process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS ?? process.env.YOOKASSA_WEBHOOK_IP_ALLOWLIST ?? "127.0.0.1,::1";
 const defaultTopupTtlSeconds = Number(process.env.TOPUP_LINK_TTL_SECONDS ?? process.env.PAYMENT_INVOICE_TTL_SECONDS ?? 180);
 const defaultYookassaApiBaseUrl = process.env.YOOKASSA_API_BASE_URL ?? "https://api.yookassa.ru/v3";
+const defaultReportsPublicBaseUrl = (() => {
+  if (process.env.REPORTS_PUBLIC_BASE_URL) {
+    return process.env.REPORTS_PUBLIC_BASE_URL;
+  }
+  if (process.env.BACKEND_PUBLIC_URL) {
+    return `${process.env.BACKEND_PUBLIC_URL.replace(/\/$/, "")}/public/reports`;
+  }
+  return "http://localhost:3000/public/reports";
+})();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -52,7 +61,14 @@ const envSchema = z.object({
   PHOTO_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
   PHOTO_ORIGINAL_DIR: z.string().default("./storage/photos/original"),
   PHOTO_COMPRESSED_DIR: z.string().default("./storage/photos/compressed"),
-  PUBLIC_FILES_BASE_URL: z.string().url().default("http://localhost:3000/uploads")
+  PUBLIC_FILES_BASE_URL: z.string().url().default("http://localhost:3000/uploads"),
+  REPORTS_STORAGE_DIR: z.string().default("/app/storage/reports"),
+  REPORTS_PUBLIC_BASE_URL: z.string().url().default(defaultReportsPublicBaseUrl),
+  REPORTS_CRON: z.string().default("5 22 * * *"),
+  REPORTS_TZ: z.string().default("Europe/Moscow"),
+  REPORTS_HTTP_PORT: z.coerce.number().int().positive().default(3010),
+  REPORTS_LOCK_ID: z.coerce.bigint().default(7342052205n),
+  INTERNAL_API_TOKEN: z.string().min(1).default("change_me_internal_token")
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

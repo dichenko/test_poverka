@@ -38,6 +38,12 @@ enum AuditEntityType {
   SYSTEM
 }
 
+enum GeneratedReportStatus {
+  PENDING
+  SUCCESS
+  ERROR
+}
+
 model Organization {
   id                BigInt  @id @default(autoincrement()) @map("org_id")
   balance           BigInt  @default(0)
@@ -339,4 +345,24 @@ model BotUserState {
   user User @relation(fields: [userId], references: [id])
 
   @@map("bot_user_states")
+}
+
+model GeneratedReport {
+  id         BigInt                @id @default(autoincrement())
+  reportCode String                @map("report_code")
+  reportDate DateTime              @map("report_date") @db.Date
+  fileName   String                @map("file_name")
+  filePath   String                @map("file_path")
+  publicUrl  String                @map("public_url")
+  status     GeneratedReportStatus @default(PENDING)
+  rowsCount  Int                   @default(0) @map("rows_count")
+  errorText  String?               @map("error_text")
+  startedAt  DateTime?             @map("started_at") @db.Timestamptz(3)
+  finishedAt DateTime?             @map("finished_at") @db.Timestamptz(3)
+  createdAt  DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([reportCode, reportDate])
+  @@index([status, reportDate(sort: Desc)])
+  @@map("generated_reports")
 }

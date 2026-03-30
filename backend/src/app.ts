@@ -55,6 +55,7 @@ export function createApp() {
   app.use(cookieParser());
   app.use(defaultRateLimit);
 
+  app.use("/public/reports", express.static(path.resolve(env.REPORTS_STORAGE_DIR)));
   app.use("/static", express.static(path.resolve(env.STORAGE_LOCAL_PATH)));
   app.use("/uploads", express.static(path.resolve(env.STORAGE_LOCAL_PATH)));
   app.use(healthRoutes);

@@ -43,8 +43,9 @@ import {
 
 const router = Router();
 const MAX_LOG_TEXT_LIMIT = 500;
+const TOPUP_CANCEL_CALLBACK_PAYLOAD = "cancel_topup_flow";
 
-type EventActionKind = "confirm" | "cancel" | "topup" | "none";
+type EventActionKind = "confirm" | "cancel" | "topup" | "topup_cancel" | "none";
 
 function pickFirstNonEmpty(...candidates: unknown[]) {
   for (const value of candidates) {
@@ -139,6 +140,25 @@ function cancelKeyboard(submissionId: string) {
               type: "message",
               text: "Отменить",
               payload: `cancel_submission:${submissionId}`
+            }
+          ]
+        ]
+      }
+    }
+  ];
+}
+
+function topupPackagesCancelKeyboard() {
+  return [
+    {
+      type: "inline_keyboard",
+      payload: {
+        buttons: [
+          [
+            {
+              type: "message",
+              text: "Отмена",
+              payload: TOPUP_CANCEL_CALLBACK_PAYLOAD
             }
           ]
         ]
@@ -242,6 +262,10 @@ function parseActionToken(value: string): { kind: EventActionKind; submissionId:
 
   if (lowered === "пополнить баланс" || lowered === "topup_balance") {
     return { kind: "topup", submissionId: "" };
+  }
+
+  if (lowered === TOPUP_CANCEL_CALLBACK_PAYLOAD) {
+    return { kind: "topup_cancel", submissionId: "" };
   }
 
   if (lowered === "подтвердить" || lowered === "confirm") {
@@ -501,13 +525,58 @@ async function handleTopupAction(input: { userId: string; numericUserId: bigint;
   await setBotUserState(input.numericUserId, BOT_STATE_AWAITING_TOPUP_PACKAGES);
   await maxBotClient.sendMessage({
     userId: input.userId,
-    text: "Сколько пакетов хотите купить?"
+    text: "Сколько пакетов хотите купить?",
+    attachments: topupPackagesCancelKeyboard()
   });
 
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
       notification: "Введите количество пакетов"
+    });
+  }
+}
+
+async function handleTopupCancelAction(input: { userId: string; numericUserId: bigint; callbackId?: string }) {
+  const activeTopup = await getActiveTopupForUser(input.numericUserId);
+  if (activeTopup) {
+    await setBotUserState(input.numericUserId, BOT_STATE_ACTIVE_TOPUP_PENDING, { topupId: activeTopup.id });
+    await maxBotClient.sendMessage({
+      userId: input.userId,
+      text: getActiveTopupUserMessage(activeTopup)
+    });
+
+    if (input.callbackId) {
+      await maxBotClient.answerCallback({
+        callbackId: input.callbackId,
+        notification: "Есть активное пополнение"
+      });
+    }
+    return;
+  }
+
+  const userState = await getBotUserState(input.numericUserId);
+  if (userState?.state === BOT_STATE_AWAITING_TOPUP_PACKAGES) {
+    await clearBotUserState(input.numericUserId);
+    await maxBotClient.sendMessage({
+      userId: input.userId,
+      text: "Сценарий пополнения отменен."
+    });
+    await sendProfileMessage(input.numericUserId, input.userId);
+
+    if (input.callbackId) {
+      await maxBotClient.answerCallback({
+        callbackId: input.callbackId,
+        notification: "Пополнение отменено"
+      });
+    }
+    return;
+  }
+
+  if (input.callbackId) {
+    await maxBotClient.answerCallback({
+      callbackId: input.callbackId,
+      notification: "Сценарий уже завершен"
     });
   }
 }
@@ -590,6 +659,16 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
 
     if (isCallbackEvent) {
       const action = resolveActionFromEvent(event, req.body);
+      const loweredText = event.text.trim().toLowerCase();
+
+      if (action.kind === "topup_cancel" || loweredText === "отмена") {
+        await handleTopupCancelAction({
+          userId: event.userId,
+          numericUserId,
+          callbackId: event.callbackId || undefined
+        });
+        return res.json({ ok: true, handled: "TOPUP_CANCEL" });
+      }
 
       if (action.kind === "topup") {
         await handleTopupAction({
@@ -681,6 +760,16 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
     }
 
     if (userState?.state === BOT_STATE_AWAITING_TOPUP_PACKAGES) {
+      const awaitingTopupAction = resolveActionFromEvent(event, req.body);
+      const loweredText = event.text.trim().toLowerCase();
+      if (awaitingTopupAction.kind === "topup_cancel" || loweredText === "отмена") {
+        await handleTopupCancelAction({
+          userId: event.userId,
+          numericUserId
+        });
+        return res.json({ ok: true, handled: "TOPUP_CANCEL" });
+      }
+
       const activeTopup = await getActiveTopupForUser(numericUserId);
       if (activeTopup) {
         await clearBotUserState(numericUserId);

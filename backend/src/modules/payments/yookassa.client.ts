@@ -89,18 +89,18 @@ function parseAllowlistEntry(entry: string) {
   };
 }
 
-function normalizeRequestPath(path: string) {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  if (/\/v3\//i.test(normalizedPath) || /\/v3$/i.test(normalizedPath)) {
-    return normalizedPath;
-  }
-
+function normalizeApiBaseUrl() {
   const base = env.YOOKASSA_API_BASE_URL.replace(/\/+$/, "");
   if (/\/v3$/i.test(base)) {
-    return normalizedPath;
+    return base;
   }
+  return `${base}/v3`;
+}
 
-  return `/v3${normalizedPath}`;
+function normalizeRequestPath(path: string) {
+  const trimmed = path.trim();
+  const withoutLeadingSlash = trimmed.replace(/^\/+/, "");
+  return withoutLeadingSlash.replace(/^v3\/+/i, "");
 }
 
 export class YookassaHttpError extends Error {
@@ -196,8 +196,8 @@ export class YookassaClient {
     }, env.YOOKASSA_HTTP_TIMEOUT_MS);
 
     const requestPath = normalizeRequestPath(path);
-    const base = env.YOOKASSA_API_BASE_URL.replace(/\/+$/, "");
-    const url = new URL(requestPath, `${base}/`);
+    const base = normalizeApiBaseUrl();
+    const url = new URL(`${base}/${requestPath}`);
 
     const headers: Record<string, string> = {
       Authorization: this.buildBasicAuthHeader(),
@@ -217,7 +217,7 @@ export class YookassaClient {
         {
           provider: "yookassa",
           method,
-          path: requestPath,
+          path: `/${requestPath}`,
           body: maskBodyForLog(body)
         },
         "YooKassa request"
@@ -236,7 +236,7 @@ export class YookassaClient {
           {
             provider: "yookassa",
             method,
-            path: requestPath,
+            path: `/${requestPath}`,
             status: response.status,
             responseBody
           },
@@ -254,7 +254,7 @@ export class YookassaClient {
         {
           provider: "yookassa",
           method,
-          path: requestPath,
+          path: `/${requestPath}`,
           status: response.status
         },
         "YooKassa response"

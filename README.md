@@ -135,7 +135,7 @@ Quick check after deploy:
 
 Implemented now:
 
-- Report registry with sequential execution (currently: `arshin`)
+- Report registry with sequential execution: `arshin` -> `balance_arshin`
 - Daily cron run via `REPORTS_CRON` (default `5 22 * * *`)
 - Timezone-aware logic via `REPORTS_TZ` (default `Europe/Moscow`)
 - PostgreSQL advisory lock + in-memory guard against parallel runs
@@ -166,16 +166,24 @@ If `REPORTS_PUBLIC_BASE_URL` is empty, report-worker builds it from `PUBLIC_FILE
 Example output path:
 
 - `/app/storage/reports/arshin/Arshin_2026-03-30.xlsx`
+- `/app/storage/reports/balance_arshin/Balance_Arshin_2026-03-30.xlsx`
 
 Example public URL:
 
 - `https://api.example.com/uploads/reports/arshin/Arshin_2026-03-30.xlsx`
+- `https://api.example.com/uploads/reports/balance_arshin/Balance_Arshin_2026-03-30.xlsx`
 
 ### Manual run (CLI)
 
 ```bash
 docker exec poverka-bot-max-report-worker \
   node dist/report-worker.js generate-report arshin 2026-03-30
+
+docker exec poverka-bot-max-report-worker \
+  node dist/report-worker.js generate-report balance_arshin 2026-03-30
+
+# local backend folder
+npm run reports:generate -- --report=balance_arshin --date=2026-03-30
 ```
 
 ### Manual run (HTTP)
@@ -185,6 +193,11 @@ curl -X POST "http://127.0.0.1:3010/internal/reports/run" \
   -H "Content-Type: application/json" \
   -H "X-Internal-Token: <INTERNAL_API_TOKEN>" \
   -d '{"reportCode":"arshin","date":"2026-03-30"}'
+
+curl -X POST "http://127.0.0.1:3010/internal/reports/run" \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Token: <INTERNAL_API_TOKEN>" \
+  -d '{"reportCode":"balance_arshin","date":"2026-03-30"}'
 ```
 
 If `date` is omitted, report-worker uses current date in `REPORTS_TZ`.
@@ -200,6 +213,23 @@ If `date` is omitted, report-worker uses current date in `REPORTS_TZ`.
 - Sort: `confirmed_at ASC`, then `meter_submissions.id ASC`
 - Photos are aggregated into one cell (`string_agg(..., E'\n')`) to avoid duplicate rows.
 - For one `report_code + date`, only one file/record is stored: repeated run rewrites the same file and updates metadata in `generated_reports`.
+
+### What `balance_arshin` report does
+
+- File name: `Balance_Arshin_YYYY-MM-DD.xlsx`
+- Worksheet name: `Balance_Arshin`
+- One row = one organization (`organizations`)
+- Date window for day metrics in `REPORTS_TZ`: `00:00:00` - `23:59:59.999`
+- Columns:
+  - `Наименование организации`
+  - `Сумма на начало дня`
+  - `Сумма на конец дня`
+  - `Количество пакетов`
+  - `Цена за пакет`
+  - `Поступление за день`
+  - `Количество пакетов передано`
+- `Поступление за день` is aggregated from successful YooKassa payments (`organization_topups`) by `paid_at`.
+- `Количество пакетов передано` is aggregated from confirmed `meter_submissions` by `confirmed_at` and `organization_id`.
 
 ## YooKassa Topups
 

@@ -3,7 +3,10 @@
 }
 
 export function unknownUserMessage(maxUserId: string) {
-  return `Вас нет в базе. Ваш MaxID: ${maxUserId}`;
+  return `Вас нет в базе.
+[Свяжитесь с поддержкой в Max](max://user/91634403)
+Или по телефону +7(937)-033-22-22
+Ваш MaxID: ${maxUserId}`;
 }
 
 export function knownUserUnexpectedMessage(maxUserId: string, remainingPackages: string) {

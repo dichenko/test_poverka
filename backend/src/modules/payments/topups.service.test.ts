@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AppError } from "../../common/app-error";
 
 function ensureEnv() {
   process.env.NODE_ENV = process.env.NODE_ENV || "test";
@@ -10,9 +9,14 @@ function ensureEnv() {
   process.env.MAX_BOT_API_BASE_URL = process.env.MAX_BOT_API_BASE_URL || "https://botapi.max.ru";
   process.env.MINIAPP_PUBLIC_URL = process.env.MINIAPP_PUBLIC_URL || "https://miniapp.example.com";
   process.env.BACKEND_PUBLIC_URL = process.env.BACKEND_PUBLIC_URL || "https://api.example.com";
-  process.env.YOOKASSA_API_BASE_URL = process.env.YOOKASSA_API_BASE_URL || "https://api.yookassa.ru";
+  process.env.YOOKASSA_API_BASE_URL = process.env.YOOKASSA_API_BASE_URL || "https://api.yookassa.ru/v3";
   process.env.YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || "shop";
   process.env.YOOKASSA_SECRET_KEY = process.env.YOOKASSA_SECRET_KEY || "secret";
+  process.env.YOOKASSA_CURRENCY = process.env.YOOKASSA_CURRENCY || "RUB";
+  process.env.YOOKASSA_RETURN_URL = process.env.YOOKASSA_RETURN_URL || "https://app.example.com/return";
+  process.env.YOOKASSA_HTTP_TIMEOUT_MS = process.env.YOOKASSA_HTTP_TIMEOUT_MS || "10000";
+  process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS = process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS || "127.0.0.1,::1";
+  process.env.TOPUP_LINK_TTL_SECONDS = process.env.TOPUP_LINK_TTL_SECONDS || "180";
 }
 
 function makeTopup(overrides: Partial<any> = {}) {
@@ -26,10 +30,9 @@ function makeTopup(overrides: Partial<any> = {}) {
     amountKopecks: 300n,
     currency: "RUB",
     provider: "yookassa",
-    providerInvoiceId: "inv_1",
-    providerInvoiceUrl: "https://pay.test/inv_1",
-    providerPaymentId: null,
+    providerPaymentId: "pay_1",
     providerStatus: "pending",
+    providerConfirmationUrl: "https://pay.test/confirm_1",
     providerIdempotenceKey: "idem-1",
     expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     paidAt: null,
@@ -104,8 +107,7 @@ async function loadService() {
   };
 
   const mockYookassaClient: any = {
-    createInvoice: vi.fn(),
-    getInvoice: vi.fn(),
+    createPayment: vi.fn(),
     getPayment: vi.fn(),
     cancelPayment: vi.fn(),
     buildBasicAuthHeader: vi.fn(),
@@ -125,9 +127,14 @@ async function loadService() {
     }))
   };
 
+  const mockBotStateService: any = {
+    clearBotUserState: vi.fn(async () => undefined)
+  };
+
   vi.doMock("../../common/prisma", () => ({ prisma: mockPrisma }));
   vi.doMock("../bot/max-bot.client", () => ({ maxBotClient: mockBotClient }));
   vi.doMock("../bot/profile.service", () => mockProfileService);
+  vi.doMock("../bot/bot-state.service", () => mockBotStateService);
   vi.doMock("./yookassa.client", () => ({
     YookassaHttpError: TestYookassaHttpError,
     yookassaClient: mockYookassaClient
@@ -141,6 +148,7 @@ async function loadService() {
     mockYookassaClient,
     mockBotClient,
     mockProfileService,
+    mockBotStateService,
     TestYookassaHttpError
   };
 }
@@ -172,10 +180,60 @@ describe("topups.service", () => {
 
     expect(result.reused).toBe(true);
     expect(result.topup.id).toBe(activeTopup.id);
-    expect(mockYookassaClient.createInvoice).not.toHaveBeenCalled();
+    expect(mockYookassaClient.createPayment).not.toHaveBeenCalled();
   });
 
-  it("stores failed topup if YooKassa create invoice returns error", async () => {
+  it("creates payment and stores confirmation_url", async () => {
+    const { service, mockPrisma, mockYookassaClient } = await loadService();
+
+    mockPrisma.organizationTopup.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: 101n,
+      organizationId: 77n,
+      userTarif: null,
+      organization: {
+        id: 77n,
+        tariffPerPackageKopecks: 200n,
+        userTarif: null,
+        balanceKopecks: 1000n,
+        balance: null
+      }
+    });
+
+    const createdTopup = makeTopup({
+      id: "0ec4ac2f-8242-46a9-8ed2-0684e5b2100d",
+      amountKopecks: 400n,
+      tariffPerPackageKopecks: 200n,
+      packagesCount: 2,
+      providerPaymentId: null,
+      providerConfirmationUrl: null
+    });
+
+    mockPrisma.organizationTopup.create.mockResolvedValue(createdTopup);
+    mockYookassaClient.createPayment.mockResolvedValue({
+      id: "pay_new",
+      status: "pending",
+      confirmation: {
+        confirmation_url: "https://pay.example/confirm"
+      }
+    });
+
+    mockPrisma.organizationTopup.update.mockResolvedValue(
+      makeTopup({
+        ...createdTopup,
+        providerPaymentId: "pay_new",
+        providerConfirmationUrl: "https://pay.example/confirm"
+      })
+    );
+
+    const result = await service.createOrReuseTopupForUser({ userIdRaw: "101", packagesCount: 2 });
+
+    expect(result.reused).toBe(false);
+    expect(result.topup.providerPaymentId).toBe("pay_new");
+    expect(result.topup.providerConfirmationUrl).toBe("https://pay.example/confirm");
+  });
+
+  it("stores failed topup if YooKassa createPayment returns error", async () => {
     const { service, mockPrisma, mockYookassaClient, TestYookassaHttpError } = await loadService();
 
     mockPrisma.organizationTopup.findFirst.mockResolvedValue(null);
@@ -192,14 +250,18 @@ describe("topups.service", () => {
       }
     });
 
-    mockPrisma.organizationTopup.create.mockResolvedValue(makeTopup({
-      id: "0ec4ac2f-8242-46a9-8ed2-0684e5b2100d",
-      amountKopecks: 400n,
-      tariffPerPackageKopecks: 200n,
-      packagesCount: 2
-    }));
+    mockPrisma.organizationTopup.create.mockResolvedValue(
+      makeTopup({
+        id: "0ec4ac2f-8242-46a9-8ed2-0684e5b2100d",
+        amountKopecks: 400n,
+        tariffPerPackageKopecks: 200n,
+        packagesCount: 2,
+        providerPaymentId: null,
+        providerConfirmationUrl: null
+      })
+    );
 
-    mockYookassaClient.createInvoice.mockRejectedValue(
+    mockYookassaClient.createPayment.mockRejectedValue(
       new TestYookassaHttpError({ status: 500, responseBody: "upstream", retryable: true })
     );
 
@@ -237,19 +299,19 @@ describe("topups.service", () => {
       id: "63bc55d5-d9da-42f7-b5db-07cb5170065f",
       packagesCount: 2,
       tariffPerPackageKopecks: 150n,
-      amountKopecks: 300n
+      amountKopecks: 300n,
+      providerPaymentId: null,
+      providerConfirmationUrl: null
     });
 
     mockPrisma.organizationTopup.create.mockResolvedValue(createdTopup);
-    mockYookassaClient.createInvoice.mockResolvedValue({
-      id: "inv_1",
+    mockYookassaClient.createPayment.mockResolvedValue({
+      id: "pay_1",
       status: "pending",
-      delivery_method: {
-        url: "https://pay.example/inv_1"
-      },
-      expires_at: new Date(Date.now() + 3 * 60 * 1000).toISOString()
+      confirmation: {
+        confirmation_url: "https://pay.example/pay_1"
+      }
     });
-
     mockPrisma.organizationTopup.update.mockResolvedValue(createdTopup);
 
     const result = await service.createOrReuseTopupForUser({ userIdRaw: "101", packagesCount: 2 });
@@ -263,91 +325,13 @@ describe("topups.service", () => {
 
     mockPrisma.organizationTopup.findFirst.mockResolvedValue(
       makeTopup({
-        providerInvoiceUrl: "https://pay.example/existing"
+        providerConfirmationUrl: "https://pay.example/existing"
       })
     );
 
     await expect(service.assertNoActiveTopupForUser("101")).rejects.toMatchObject({
       code: "ACTIVE_TOPUP_PENDING"
     });
-  });
-
-  it("handles successful payment and sends success + profile messages", async () => {
-    const { service, mockPrisma, mockBotClient } = await loadService();
-
-    const topup = makeTopup({ amountKopecks: 500n });
-    let topupStatus = "awaiting_payment";
-    let balanceKopecks = 1000n;
-    let ledgerCreates = 0;
-
-    mockPrisma.organizationTopup.findUnique.mockResolvedValue(topup);
-    mockPrisma.organizationTopupPaymentAttempt.upsert.mockResolvedValue({ id: "attempt-1" });
-
-    mockPrisma.$transaction.mockImplementation(async (callback: any) => {
-      let queryCalls = 0;
-      const tx = {
-        $queryRaw: vi.fn(async () => {
-          queryCalls += 1;
-          if (queryCalls === 1) {
-            return [
-              {
-                id: topup.id,
-                status: topupStatus,
-                organization_id: topup.organizationId,
-                user_id: topup.userId,
-                amount_kopecks: topup.amountKopecks
-              }
-            ];
-          }
-          return [
-            {
-              org_id: topup.organizationId,
-              balance_kopecks: balanceKopecks
-            }
-          ];
-        }),
-        organization: {
-          update: vi.fn(async ({ data }: any) => {
-            balanceKopecks = data.balanceKopecks;
-            return {};
-          })
-        },
-        organizationBalanceTransaction: {
-          create: vi.fn(async () => {
-            ledgerCreates += 1;
-            return {};
-          })
-        },
-        organizationTopup: {
-          update: vi.fn(async ({ data }: any) => {
-            topupStatus = data.status ?? topupStatus;
-            return {};
-          })
-        }
-      };
-
-      return callback(tx);
-    });
-
-    await service.processPaymentSucceeded({
-      payment: {
-        id: "pay_1",
-        status: "succeeded",
-        paid: true,
-        metadata: {
-          topup_id: topup.id
-        },
-        amount: {
-          value: "5.00",
-          currency: "RUB"
-        }
-      },
-      source: "webhook"
-    });
-
-    expect(ledgerCreates).toBe(1);
-    expect(balanceKopecks).toBe(1500n);
-    expect(mockBotClient.sendMessage).toHaveBeenCalledTimes(2);
   });
 
   it("ignores duplicate payment.succeeded without double credit", async () => {
@@ -406,7 +390,7 @@ describe("topups.service", () => {
       status: "succeeded",
       paid: true,
       metadata: {
-        topup_id: topup.id
+        internal_topup_id: topup.id
       },
       amount: {
         value: "5.00",
@@ -487,71 +471,12 @@ describe("topups.service", () => {
     expect(balanceKopecks).toBe(1700n);
   });
 
-  it("keeps topup active when payment is canceled but invoice is still pending", async () => {
-    const { service, mockPrisma, mockYookassaClient, mockBotClient } = await loadService();
+  it("closes topup as canceled from payment.canceled", async () => {
+    const { service, mockPrisma, mockBotClient } = await loadService();
 
-    const topup = makeTopup();
+    const topup = makeTopup({ expiresAt: new Date(Date.now() + 5 * 60 * 1000) });
     mockPrisma.organizationTopup.findUnique.mockResolvedValue(topup);
     mockPrisma.organizationTopupPaymentAttempt.upsert.mockResolvedValue({ id: "attempt" });
-
-    mockYookassaClient.getInvoice.mockResolvedValue({
-      id: topup.providerInvoiceId,
-      status: "pending",
-      expires_at: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
-      payment_details: {
-        id: "pay_1"
-      }
-    });
-
-    mockPrisma.organizationTopup.update.mockResolvedValue({});
-
-    await service.processPaymentCanceled({
-      payment: {
-        id: "pay_1",
-        status: "canceled",
-        metadata: {
-          topup_id: topup.id
-        },
-        invoice_details: {
-          id: topup.providerInvoiceId
-        },
-        cancellation_details: {
-          party: "merchant",
-          reason: "canceled_by_merchant"
-        },
-        amount: {
-          value: "3.00",
-          currency: "RUB"
-        }
-      },
-      source: "webhook"
-    });
-
-    expect(mockPrisma.organizationTopup.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: "awaiting_payment"
-        })
-      })
-    );
-    expect(mockBotClient.sendMessage).not.toHaveBeenCalled();
-  });
-
-  it("closes topup as expired when invoice has expired", async () => {
-    const { service, mockPrisma, mockYookassaClient, mockBotClient } = await loadService();
-
-    const topup = makeTopup();
-    mockPrisma.organizationTopup.findUnique.mockResolvedValue(topup);
-    mockPrisma.organizationTopupPaymentAttempt.upsert.mockResolvedValue({ id: "attempt" });
-
-    mockYookassaClient.getInvoice.mockResolvedValue({
-      id: topup.providerInvoiceId,
-      status: "pending",
-      expires_at: new Date(Date.now() - 60 * 1000).toISOString(),
-      payment_details: {
-        id: "pay_1"
-      }
-    });
 
     mockPrisma.$transaction.mockImplementation(async (callback: any) => {
       const tx = {
@@ -574,10 +499,10 @@ describe("topups.service", () => {
         id: "pay_1",
         status: "canceled",
         metadata: {
-          topup_id: topup.id
+          internal_topup_id: topup.id
         },
-        invoice_details: {
-          id: topup.providerInvoiceId
+        cancellation_details: {
+          reason: "canceled_by_merchant"
         },
         amount: {
           value: "3.00",
@@ -586,6 +511,47 @@ describe("topups.service", () => {
       },
       source: "webhook"
     });
+
+    expect(mockBotClient.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("expires topup on local timeout when provider still pending", async () => {
+    const { service, mockPrisma, mockYookassaClient, mockBotClient } = await loadService();
+
+    const topup = makeTopup({
+      providerPaymentId: "pay_1",
+      expiresAt: new Date(Date.now() - 60 * 1000)
+    });
+
+    mockPrisma.organizationTopup.findUnique.mockResolvedValue(topup);
+    mockYookassaClient.getPayment.mockResolvedValueOnce({
+      id: "pay_1",
+      status: "pending",
+      amount: { value: "3.00", currency: "RUB" }
+    });
+    mockYookassaClient.getPayment.mockResolvedValueOnce({
+      id: "pay_1",
+      status: "pending",
+      amount: { value: "3.00", currency: "RUB" }
+    });
+
+    mockPrisma.$transaction.mockImplementation(async (callback: any) => {
+      const tx = {
+        $queryRaw: vi.fn(async () => [
+          {
+            id: topup.id,
+            status: "awaiting_payment",
+            user_id: topup.userId
+          }
+        ]),
+        organizationTopup: {
+          update: vi.fn(async () => ({}))
+        }
+      };
+      return callback(tx);
+    });
+
+    await service.reconcileTopupWithProvider(topup.id);
 
     expect(mockBotClient.sendMessage).toHaveBeenCalledTimes(2);
   });

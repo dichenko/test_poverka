@@ -8,30 +8,16 @@ export interface YookassaAmount {
   currency: string;
 }
 
-export interface YookassaInvoice {
-  id: string;
-  status: string;
-  amount?: YookassaAmount;
-  expires_at?: string;
-  delivery_method?: {
-    type?: string;
-    url?: string;
-  };
-  payment_details?: {
-    id?: string;
-    status?: string;
-  };
-  metadata?: Record<string, unknown>;
-}
-
 export interface YookassaPayment {
   id: string;
   status: string;
   paid?: boolean;
   amount?: YookassaAmount;
   metadata?: Record<string, unknown>;
-  invoice_details?: {
-    id?: string;
+  confirmation?: {
+    type?: string;
+    confirmation_url?: string;
+    return_url?: string;
   };
   cancellation_details?: {
     party?: string;
@@ -42,23 +28,15 @@ export interface YookassaPayment {
   created_at?: string;
 }
 
-export interface YookassaCreateInvoicePayload {
-  payment_data: {
-    amount: YookassaAmount;
-    capture: boolean;
-    description: string;
-    metadata: Record<string, string>;
+export interface YookassaCreatePaymentPayload {
+  amount: YookassaAmount;
+  capture: boolean;
+  confirmation: {
+    type: "redirect";
+    return_url: string;
   };
-  cart: Array<{
-    description: string;
-    price: YookassaAmount;
-    quantity: number;
-  }>;
-  delivery_method_data: {
-    type: "self";
-  };
-  locale: "ru_RU";
-  expires_at: string;
+  description: string;
+  metadata: Record<string, string>;
 }
 
 function isRetryableStatus(status: number) {
@@ -71,8 +49,8 @@ function maskBodyForLog(body: unknown) {
   }
 
   const clone = JSON.parse(JSON.stringify(body));
-  if (clone?.payment_data?.metadata) {
-    clone.payment_data.metadata = "[REDACTED_METADATA]";
+  if (clone?.metadata) {
+    clone.metadata = "[REDACTED_METADATA]";
   }
   return clone;
 }
@@ -111,6 +89,20 @@ function parseAllowlistEntry(entry: string) {
   };
 }
 
+function normalizeRequestPath(path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (/\/v3\//i.test(normalizedPath) || /\/v3$/i.test(normalizedPath)) {
+    return normalizedPath;
+  }
+
+  const base = env.YOOKASSA_API_BASE_URL.replace(/\/+$/, "");
+  if (/\/v3$/i.test(base)) {
+    return normalizedPath;
+  }
+
+  return `/v3${normalizedPath}`;
+}
+
 export class YookassaHttpError extends Error {
   public readonly status: number;
   public readonly responseBody: string;
@@ -125,7 +117,7 @@ export class YookassaHttpError extends Error {
 }
 
 export class YookassaClient {
-  private readonly allowlist = env.YOOKASSA_WEBHOOK_IP_ALLOWLIST.split(",")
+  private readonly allowlist = env.YOOKASSA_WEBHOOK_ALLOWED_IPS.split(",")
     .map((item) => item.trim())
     .filter(Boolean)
     .map((item) => parseAllowlistEntry(item))
@@ -185,34 +177,28 @@ export class YookassaClient {
     return false;
   }
 
-  async createInvoice(payload: YookassaCreateInvoicePayload, idempotenceKey: string) {
-    return this.requestJson<YookassaInvoice>("POST", "/v3/invoices", payload, idempotenceKey);
-  }
-
-  async getInvoice(invoiceId: string) {
-    return this.requestJson<YookassaInvoice>("GET", `/v3/invoices/${encodeURIComponent(invoiceId)}`);
+  async createPayment(payload: YookassaCreatePaymentPayload, idempotenceKey: string) {
+    return this.requestJson<YookassaPayment>("POST", "/payments", payload, idempotenceKey);
   }
 
   async getPayment(paymentId: string) {
-    return this.requestJson<YookassaPayment>("GET", `/v3/payments/${encodeURIComponent(paymentId)}`);
+    return this.requestJson<YookassaPayment>("GET", `/payments/${encodeURIComponent(paymentId)}`);
   }
 
   async cancelPayment(paymentId: string, idempotenceKey: string) {
-    return this.requestJson<YookassaPayment>(
-      "POST",
-      `/v3/payments/${encodeURIComponent(paymentId)}/cancel`,
-      {},
-      idempotenceKey
-    );
+    return this.requestJson<YookassaPayment>("POST", `/payments/${encodeURIComponent(paymentId)}/cancel`, {}, idempotenceKey);
   }
 
   private async requestJson<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown, idempotenceKey?: string) {
     const controller = new AbortController();
     const timeout = setTimeout(() => {
       controller.abort();
-    }, env.YOOKASSA_REQUEST_TIMEOUT_MS);
+    }, env.YOOKASSA_HTTP_TIMEOUT_MS);
 
-    const url = new URL(path, env.YOOKASSA_API_BASE_URL);
+    const requestPath = normalizeRequestPath(path);
+    const base = env.YOOKASSA_API_BASE_URL.replace(/\/+$/, "");
+    const url = new URL(requestPath, `${base}/`);
+
     const headers: Record<string, string> = {
       Authorization: this.buildBasicAuthHeader(),
       Accept: "application/json"
@@ -231,7 +217,7 @@ export class YookassaClient {
         {
           provider: "yookassa",
           method,
-          path,
+          path: requestPath,
           body: maskBodyForLog(body)
         },
         "YooKassa request"
@@ -250,7 +236,7 @@ export class YookassaClient {
           {
             provider: "yookassa",
             method,
-            path,
+            path: requestPath,
             status: response.status,
             responseBody
           },
@@ -268,7 +254,7 @@ export class YookassaClient {
         {
           provider: "yookassa",
           method,
-          path,
+          path: requestPath,
           status: response.status
         },
         "YooKassa response"

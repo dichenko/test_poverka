@@ -1,6 +1,14 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const defaultYookassaTimeoutMs = Number(
+  process.env.YOOKASSA_HTTP_TIMEOUT_MS ?? process.env.YOOKASSA_REQUEST_TIMEOUT_MS ?? 10000
+);
+const defaultYookassaWebhookAllowedIps =
+  process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS ?? process.env.YOOKASSA_WEBHOOK_IP_ALLOWLIST ?? "127.0.0.1,::1";
+const defaultTopupTtlSeconds = Number(process.env.TOPUP_LINK_TTL_SECONDS ?? process.env.PAYMENT_INVOICE_TTL_SECONDS ?? 180);
+const defaultYookassaApiBaseUrl = process.env.YOOKASSA_API_BASE_URL ?? "https://api.yookassa.ru/v3";
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -14,14 +22,17 @@ const envSchema = z.object({
   MAX_BOT_TOKEN: z.string().min(1),
   MAX_WEBHOOK_SECRET: z.string().min(1),
   MAX_BOT_API_BASE_URL: z.string().url().default("https://botapi.max.ru"),
-  YOOKASSA_API_BASE_URL: z.string().url().default("https://api.yookassa.ru"),
+  YOOKASSA_API_BASE_URL: z.string().url().default(defaultYookassaApiBaseUrl),
   YOOKASSA_SHOP_ID: z.string().min(1),
   YOOKASSA_SECRET_KEY: z.string().min(1),
-  YOOKASSA_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
-  YOOKASSA_WEBHOOK_IP_ALLOWLIST: z.string().default("127.0.0.1,::1"),
+  YOOKASSA_CURRENCY: z.string().min(1).default("RUB"),
+  YOOKASSA_RETURN_URL: z.string().url(),
+  YOOKASSA_WEBHOOK_URL: z.string().url().optional(),
+  YOOKASSA_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(defaultYookassaTimeoutMs),
+  YOOKASSA_WEBHOOK_ALLOWED_IPS: z.string().default(defaultYookassaWebhookAllowedIps),
   PAYMENT_MIN_PACKAGES_PER_TOPUP: z.coerce.number().int().positive().default(1),
   PAYMENT_MAX_PACKAGES_PER_TOPUP: z.coerce.number().int().positive().default(1000),
-  PAYMENT_INVOICE_TTL_SECONDS: z.coerce.number().int().positive().default(180),
+  TOPUP_LINK_TTL_SECONDS: z.coerce.number().int().positive().default(defaultTopupTtlSeconds),
   PAYMENT_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
   PAYMENT_POLL_BATCH_SIZE: z.coerce.number().int().positive().default(50),
   PAYMENT_POLL_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(5),

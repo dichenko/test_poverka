@@ -1,4 +1,4 @@
-﻿# Poverka Bot MAX
+# Poverka Bot MAX
 
 Production-ready baseline for MAX bot + miniapp + PostgreSQL.
 
@@ -132,23 +132,26 @@ Quick check after deploy:
 Implemented flow:
 
 - User presses `Пополнить баланс` in profile message.
-- Bot asks for package count and creates YooKassa invoice (`POST /v3/invoices`) with TTL 3 minutes.
+- Bot asks for package count and creates YooKassa payment (`POST /payments`) with `confirmation_url` and TTL 3 minutes.
 - Webhook (`POST /api/payments/yookassa/webhook`) is the primary payment truth source.
 - `payment-worker` reconciles pending topups as fallback.
-- While active topup exists (`awaiting_payment` / `finalizing`), submission flow is blocked on both bot and backend API levels (`ACTIVE_TOPUP_PENDING`).
+- While active topup exists (`awaiting_payment`), submission flow is blocked on both bot and backend API levels (`ACTIVE_TOPUP_PENDING`).
 
 ### Required env vars
 
 ```bash
-YOOKASSA_API_BASE_URL=https://api.yookassa.ru
+YOOKASSA_API_BASE_URL=https://api.yookassa.ru/v3
 YOOKASSA_SHOP_ID=...
 YOOKASSA_SECRET_KEY=...
-YOOKASSA_REQUEST_TIMEOUT_MS=10000
-YOOKASSA_WEBHOOK_IP_ALLOWLIST=185.71.76.0/27,185.71.77.0/27,77.75.153.0/25,77.75.156.11,77.75.156.35
+YOOKASSA_CURRENCY=RUB
+YOOKASSA_RETURN_URL=https://<miniapp-or-landing>/payment-return
+YOOKASSA_WEBHOOK_URL=https://<backend-domain>/api/payments/yookassa/webhook
+YOOKASSA_HTTP_TIMEOUT_MS=10000
+YOOKASSA_WEBHOOK_ALLOWED_IPS=185.71.76.0/27,185.71.77.0/27,77.75.153.0/25,77.75.156.11,77.75.156.35,77.75.154.128/25,2a02:5180::/32
 
 PAYMENT_MIN_PACKAGES_PER_TOPUP=1
 PAYMENT_MAX_PACKAGES_PER_TOPUP=1000
-PAYMENT_INVOICE_TTL_SECONDS=180
+TOPUP_LINK_TTL_SECONDS=180
 PAYMENT_POLL_INTERVAL_SECONDS=10
 PAYMENT_POLL_BATCH_SIZE=50
 PAYMENT_POLL_BACKOFF_BASE_SECONDS=5

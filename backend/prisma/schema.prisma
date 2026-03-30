@@ -240,8 +240,7 @@ model OrganizationTopup {
   amountKopecks           BigInt    @map("amount_kopecks")
   currency                String    @default("RUB")
   provider                String    @default("yookassa")
-  providerInvoiceId       String?   @map("provider_invoice_id")
-  providerInvoiceUrl      String?   @map("provider_invoice_url")
+  providerConfirmationUrl String?   @map("provider_confirmation_url")
   providerPaymentId       String?   @map("provider_payment_id")
   providerStatus          String?   @map("provider_status")
   providerIdempotenceKey  String?   @map("provider_idempotence_key")
@@ -317,7 +316,7 @@ model YookassaWebhookLog {
   eventType        String    @map("event_type")
   providerObjectId String    @map("provider_object_id")
   topupId          String?   @map("topup_id") @db.Uuid
-  remoteIp         String?   @map("remote_ip")
+  remoteIp         String?   @map("remote_ip") @db.Inet
   isTrustedIp      Boolean   @default(false) @map("is_trusted_ip")
   headers          Json?
   payload          Json

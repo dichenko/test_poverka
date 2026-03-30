@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../../common/prisma";
 
 export const BOT_STATE_AWAITING_TOPUP_PACKAGES = "awaiting_topup_packages";
+export const BOT_STATE_ACTIVE_TOPUP_PENDING = "active_topup_pending";
 
 export async function getBotUserState(userId: bigint) {
   return prisma.botUserState.findUnique({

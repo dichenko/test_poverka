@@ -24,6 +24,7 @@ import {
   rejectSubmissionForInsufficientBalance
 } from "../submissions/submissions.service";
 import {
+  BOT_STATE_ACTIVE_TOPUP_PENDING,
   BOT_STATE_AWAITING_TOPUP_PACKAGES,
   clearBotUserState,
   getBotUserState,
@@ -481,6 +482,7 @@ async function handleStartCommand(input: { userId: string; numericUserId: bigint
 async function handleTopupAction(input: { userId: string; numericUserId: bigint; callbackId?: string }) {
   const activeTopup = await getActiveTopupForUser(input.numericUserId);
   if (activeTopup) {
+    await setBotUserState(input.numericUserId, BOT_STATE_ACTIVE_TOPUP_PENDING, { topupId: activeTopup.id });
     await maxBotClient.sendMessage({
       userId: input.userId,
       text: getActiveTopupUserMessage(activeTopup)
@@ -525,7 +527,7 @@ async function handleTopupPackagesInput(input: { userId: string; numericUserId: 
       packagesCount
     });
 
-    await clearBotUserState(input.numericUserId);
+    await setBotUserState(input.numericUserId, BOT_STATE_ACTIVE_TOPUP_PENDING, { topupId: created.topup.id });
 
     await maxBotClient.sendMessage({
       userId: input.userId,
@@ -667,6 +669,13 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
     }
 
     const userState = await getBotUserState(numericUserId);
+
+    if (userState?.state === BOT_STATE_ACTIVE_TOPUP_PENDING) {
+      const activeTopup = await getActiveTopupForUser(numericUserId);
+      if (!activeTopup) {
+        await clearBotUserState(numericUserId);
+      }
+    }
 
     if (userState?.state === BOT_STATE_AWAITING_TOPUP_PACKAGES) {
       const activeTopup = await getActiveTopupForUser(numericUserId);

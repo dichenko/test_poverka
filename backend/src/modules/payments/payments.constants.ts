@@ -1,6 +1,5 @@
 export const TOPUP_STATUS = {
   AWAITING_PAYMENT: "awaiting_payment",
-  FINALIZING: "finalizing",
   PAID: "paid",
   EXPIRED: "expired",
   CANCELED: "canceled",
@@ -9,7 +8,7 @@ export const TOPUP_STATUS = {
 
 export type TopupStatus = (typeof TOPUP_STATUS)[keyof typeof TOPUP_STATUS];
 
-export const ACTIVE_TOPUP_STATUSES: TopupStatus[] = [TOPUP_STATUS.AWAITING_PAYMENT, TOPUP_STATUS.FINALIZING];
+export const ACTIVE_TOPUP_STATUSES: TopupStatus[] = [TOPUP_STATUS.AWAITING_PAYMENT];
 
 export const TERMINAL_TOPUP_STATUSES: TopupStatus[] = [
   TOPUP_STATUS.PAID,

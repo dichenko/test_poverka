@@ -3,13 +3,19 @@ import { AppError } from "../../common/app-error";
 import { logger } from "../../common/logger";
 import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
+import { clearBotUserState } from "../bot/bot-state.service";
 import { maxBotClient } from "../bot/max-bot.client";
 import { getUserProfilePayload } from "../bot/profile.service";
 import { ACTIVE_TOPUP_STATUSES, PAYMENT_ERROR_CODES, TOPUP_STATUS } from "./payments.constants";
-import { formatKopecksAsRubles, kopecksToYookassaAmount, legacyRublesToKopecks, parseYookassaAmountToKopecks } from "./money";
+import {
+  formatKopecksAsRubles,
+  kopecksToYookassaAmount,
+  legacyRublesToKopecks,
+  parseYookassaAmountToKopecks
+} from "./money";
 import { YookassaHttpError, type YookassaPayment, yookassaClient } from "./yookassa.client";
 
-const USER_TOPUP_LINK_TTL_MINUTES = Math.ceil(env.PAYMENT_INVOICE_TTL_SECONDS / 60);
+const USER_TOPUP_LINK_TTL_MINUTES = Math.ceil(env.TOPUP_LINK_TTL_SECONDS / 60);
 
 type TopupWithRelations = Prisma.OrganizationTopupGetPayload<{
   include: {
@@ -28,6 +34,8 @@ interface FinalizeTopupResult {
   topupId: string;
   userId: bigint;
 }
+
+type FinalizationOutcome = "paid" | "canceled" | "expired";
 
 function parseUserId(raw: string | bigint) {
   if (typeof raw === "bigint") {
@@ -76,13 +84,6 @@ function resolveTariffPerPackageKopecks(input: {
   return 0n;
 }
 
-function extractInvoiceUrl(topup: { providerInvoiceUrl: string | null; id: string }) {
-  if (topup.providerInvoiceUrl) {
-    return topup.providerInvoiceUrl;
-  }
-  return `${env.YOOKASSA_API_BASE_URL.replace(/\/$/, "")}/v3/invoices/${encodeURIComponent(topup.id)}`;
-}
-
 function formatMoscowDateTime(value: Date) {
   return new Intl.DateTimeFormat("ru-RU", {
     timeZone: "Europe/Moscow",
@@ -114,11 +115,7 @@ function isActiveTopupUniqueViolation(error: unknown) {
 
 function validatePackagesCount(packagesCount: number) {
   if (!Number.isInteger(packagesCount) || packagesCount <= 0) {
-    throw new AppError(
-      "Введите целое положительное число пакетов.",
-      400,
-      PAYMENT_ERROR_CODES.TOPUP_INVALID_PACKAGES_COUNT
-    );
+    throw new AppError("Введите целое положительное число пакетов.", 400, PAYMENT_ERROR_CODES.TOPUP_INVALID_PACKAGES_COUNT);
   }
 
   if (packagesCount < env.PAYMENT_MIN_PACKAGES_PER_TOPUP || packagesCount > env.PAYMENT_MAX_PACKAGES_PER_TOPUP) {
@@ -128,6 +125,62 @@ function validatePackagesCount(packagesCount: number) {
       PAYMENT_ERROR_CODES.TOPUP_INVALID_PACKAGES_COUNT
     );
   }
+}
+
+function normalizeCancelOutcome(input: {
+  providerReason?: string | null;
+  topupExpiresAt: Date;
+  now: Date;
+}): { terminalStatus: "expired" | "canceled"; reasonCode: string; reasonText: string } {
+  const reason = String(input.providerReason || "").trim().toLowerCase();
+  const expiredByReason = reason.includes("expired") || reason.includes("timeout");
+  const expiredByTime = input.topupExpiresAt.getTime() <= input.now.getTime();
+
+  if (expiredByReason || expiredByTime) {
+    return {
+      terminalStatus: TOPUP_STATUS.EXPIRED,
+      reasonCode: reason || "expired_local_timeout",
+      reasonText: reason || "Topup link expired"
+    };
+  }
+
+  return {
+    terminalStatus: TOPUP_STATUS.CANCELED,
+    reasonCode: reason || "payment_canceled",
+    reasonText: reason || "Payment canceled"
+  };
+}
+
+async function sendTopupFinalizedMessages(input: { userId: bigint; outcome: FinalizationOutcome }) {
+  if (input.outcome === "paid") {
+    await maxBotClient.sendMessage({
+      userId: input.userId.toString(),
+      text: "Платеж прошел, средства зачислены на ваш счет"
+    });
+  } else if (input.outcome === "canceled") {
+    await maxBotClient.sendMessage({
+      userId: input.userId.toString(),
+      text: "Платеж отменен"
+    });
+  } else {
+    await maxBotClient.sendMessage({
+      userId: input.userId.toString(),
+      text: "Время оплаты истекло, платеж отменен"
+    });
+  }
+
+  await clearBotUserState(input.userId);
+
+  const profile = await getUserProfilePayload(input.userId);
+  if (!profile) {
+    return;
+  }
+
+  await maxBotClient.sendMessage({
+    userId: input.userId.toString(),
+    text: profile.text,
+    attachments: profile.attachments
+  });
 }
 
 export function parsePackagesCountFromText(rawText: string) {
@@ -144,47 +197,22 @@ export function parsePackagesCountFromText(rawText: string) {
 
 export function getTopupPaymentLinkMessage(topup: {
   amountKopecks: bigint;
-  providerInvoiceUrl: string | null;
+  providerConfirmationUrl: string | null;
 }) {
-  const url = topup.providerInvoiceUrl || "(ссылка недоступна)";
-  return `Для оплаты перейдите по ссылке: ${url}\nВремя для оплаты: ${USER_TOPUP_LINK_TTL_MINUTES} минуты, после этого ссылка станет недействительной.`;
+  const url = topup.providerConfirmationUrl || "(ссылка недоступна)";
+  return `Для оплаты пройдите по ссылке: ${url}\nВремя для оплаты: ${USER_TOPUP_LINK_TTL_MINUTES} минуты, после этого ссылка становится недействительной.`;
 }
 
 export function getActiveTopupUserMessage(topup: {
   amountKopecks: bigint;
-  providerInvoiceUrl: string | null;
+  providerConfirmationUrl: string | null;
   expiresAt: Date;
 }) {
   const amountRub = formatKopecksAsRubles(topup.amountKopecks);
-  const url = topup.providerInvoiceUrl || "(ссылка недоступна)";
+  const url = topup.providerConfirmationUrl || "(ссылка недоступна)";
   const expiresAt = formatMoscowDateTime(topup.expiresAt);
 
-  return `У тебя есть незавершенное пополнение баланса на ${amountRub}.\nОплати его по ссылке: ${url}\nСрок действия до ${expiresAt}.`;
-}
-
-async function sendTopupFinalizedMessages(input: { userId: bigint; success: boolean }) {
-  if (input.success) {
-    await maxBotClient.sendMessage({
-      userId: input.userId.toString(),
-      text: "Платеж прошел, средства зачислены на ваш счет."
-    });
-  } else {
-    await maxBotClient.sendMessage({
-      userId: input.userId.toString(),
-      text: "Время оплаты истекло, платеж отменен."
-    });
-  }
-
-  const profile = await getUserProfilePayload(input.userId);
-  if (!profile) {
-    return;
-  }
-
-  await maxBotClient.sendMessage({
-    userId: input.userId.toString(),
-    text: profile.text,
-    attachments: profile.attachments
-  });
+  return `У тебя есть незавершенный платеж на ${amountRub}.\nОплати его по ссылке: ${url}\nСрок действия до ${expiresAt}.`;
 }
 
 export async function getActiveTopupForUser(userIdRaw: string | bigint) {
@@ -215,7 +243,7 @@ export async function assertNoActiveTopupForUser(userIdRaw: string | bigint) {
   throw new AppError(getActiveTopupUserMessage(activeTopup), 409, PAYMENT_ERROR_CODES.ACTIVE_TOPUP_PENDING, {
     topupId: activeTopup.id,
     amountKopecks: activeTopup.amountKopecks.toString(),
-    providerInvoiceUrl: activeTopup.providerInvoiceUrl,
+    providerConfirmationUrl: activeTopup.providerConfirmationUrl,
     expiresAt: activeTopup.expiresAt.toISOString()
   });
 }
@@ -260,10 +288,10 @@ export async function createOrReuseTopupForUser(input: {
 
   const amountKopecks = BigInt(input.packagesCount) * tariffPerPackageKopecks;
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + env.PAYMENT_INVOICE_TTL_SECONDS * 1000);
+  const expiresAt = new Date(now.getTime() + env.TOPUP_LINK_TTL_SECONDS * 1000);
   const idempotenceKey = yookassaClient.generateIdempotenceKey();
 
-  let topup = null as TopupWithRelations | null;
+  let topup: TopupWithRelations | null = null;
 
   try {
     topup = await prisma.organizationTopup.create({
@@ -274,7 +302,7 @@ export async function createOrReuseTopupForUser(input: {
         packagesCount: input.packagesCount,
         tariffPerPackageKopecks,
         amountKopecks,
-        currency: "RUB",
+        currency: env.YOOKASSA_CURRENCY,
         provider: "yookassa",
         providerStatus: "created_local",
         providerIdempotenceKey: idempotenceKey,
@@ -304,56 +332,44 @@ export async function createOrReuseTopupForUser(input: {
   }
 
   try {
-    const itemDescription = `Пополнение баланса организации: ${input.packagesCount} пакетов`;
+    const description = `Пополнение баланса организации на ${input.packagesCount} пакетов`;
 
-    const invoice = await yookassaClient.createInvoice(
+    const payment = await yookassaClient.createPayment(
       {
-        payment_data: {
-          amount: {
-            value: kopecksToYookassaAmount(amountKopecks),
-            currency: "RUB"
-          },
-          capture: true,
-          description: itemDescription,
-          metadata: {
-            topup_id: topup.id,
-            organization_id: user.organizationId.toString(),
-            user_id: user.id.toString(),
-            packages_count: String(input.packagesCount),
-            tariff_per_package_kopecks: tariffPerPackageKopecks.toString()
-          }
+        amount: {
+          value: kopecksToYookassaAmount(amountKopecks),
+          currency: env.YOOKASSA_CURRENCY
         },
-        cart: [
-          {
-            description: itemDescription,
-            price: {
-              value: kopecksToYookassaAmount(tariffPerPackageKopecks),
-              currency: "RUB"
-            },
-            quantity: input.packagesCount
-          }
-        ],
-        delivery_method_data: {
-          type: "self"
+        capture: true,
+        confirmation: {
+          type: "redirect",
+          return_url: env.YOOKASSA_RETURN_URL
         },
-        locale: "ru_RU",
-        expires_at: expiresAt.toISOString()
+        description,
+        metadata: {
+          organization_id: user.organizationId.toString(),
+          user_id: user.id.toString(),
+          packages_count: String(input.packagesCount),
+          tariff_per_package_kopecks: tariffPerPackageKopecks.toString(),
+          internal_topup_id: topup.id
+        }
       },
       idempotenceKey
     );
 
-    const providerUrl = invoice.delivery_method?.url ?? null;
-    const invoiceExpiresAt = parseDateOrNull(invoice.expires_at) ?? expiresAt;
+    const providerConfirmationUrl = payment.confirmation?.confirmation_url ?? null;
+    if (!providerConfirmationUrl) {
+      throw new AppError("YooKassa response does not include confirmation_url.", 502, "YOOKASSA_CONFIRMATION_URL_MISSING");
+    }
 
     const updatedTopup = await prisma.organizationTopup.update({
       where: {
         id: topup.id
       },
       data: {
-        providerInvoiceId: invoice.id,
-        providerInvoiceUrl: providerUrl,
-        providerStatus: invoice.status,
-        expiresAt: invoiceExpiresAt,
+        providerPaymentId: payment.id,
+        providerConfirmationUrl,
+        providerStatus: payment.status,
         lastProviderSyncAt: new Date(),
         nextPollAt: new Date(),
         errorMessage: null
@@ -374,9 +390,9 @@ export async function createOrReuseTopupForUser(input: {
       data: {
         status: TOPUP_STATUS.FAILED,
         canceledAt: new Date(),
-        cancelReasonCode: "invoice_create_failed",
-        cancelReasonText: "Failed to create invoice in YooKassa",
-        providerStatus: "invoice_create_failed",
+        cancelReasonCode: "payment_create_failed",
+        cancelReasonText: "Failed to create payment in YooKassa",
+        providerStatus: "payment_create_failed",
         errorMessage: truncateErrorMessage(error),
         nextPollAt: null
       }
@@ -388,14 +404,10 @@ export async function createOrReuseTopupForUser(input: {
         topupId: topup.id,
         userId: userId.toString()
       },
-      "Failed to create YooKassa invoice"
+      "Failed to create YooKassa payment"
     );
 
-    throw new AppError(
-      "Не удалось создать ссылку на оплату. Попробуйте снова через минуту.",
-      502,
-      PAYMENT_ERROR_CODES.TOPUP_CREATE_FAILED
-    );
+    throw new AppError("Не удалось создать ссылку на оплату. Попробуйте снова через минуту.", 502, PAYMENT_ERROR_CODES.TOPUP_CREATE_FAILED);
   }
 }
 
@@ -451,7 +463,7 @@ export async function listTopupsForPolling(limit = env.PAYMENT_POLL_BATCH_SIZE) 
       status: {
         in: ACTIVE_TOPUP_STATUSES
       },
-      OR: [{ nextPollAt: null }, { nextPollAt: { lte: new Date() } }]
+      OR: [{ nextPollAt: null }, { nextPollAt: { lte: new Date() } }, { expiresAt: { lte: new Date() } }]
     },
     orderBy: [{ nextPollAt: "asc" }, { createdAt: "asc" }],
     take: limit
@@ -475,11 +487,11 @@ export async function upsertTopupPaymentAttempt(input: {
     },
     create: {
       topupId: input.topupId,
-      providerInvoiceId: input.payment.invoice_details?.id ?? null,
+      providerInvoiceId: null,
       providerPaymentId: input.payment.id,
       status,
       amountKopecks,
-      currency: String(input.payment.amount?.currency || "RUB"),
+      currency: String(input.payment.amount?.currency || env.YOOKASSA_CURRENCY),
       paid,
       cancellationParty: input.payment.cancellation_details?.party ?? null,
       cancellationReason: input.payment.cancellation_details?.reason ?? null,
@@ -489,10 +501,10 @@ export async function upsertTopupPaymentAttempt(input: {
     },
     update: {
       topupId: input.topupId,
-      providerInvoiceId: input.payment.invoice_details?.id ?? null,
+      providerInvoiceId: null,
       status,
       amountKopecks,
-      currency: String(input.payment.amount?.currency || "RUB"),
+      currency: String(input.payment.amount?.currency || env.YOOKASSA_CURRENCY),
       paid,
       cancellationParty: input.payment.cancellation_details?.party ?? null,
       cancellationReason: input.payment.cancellation_details?.reason ?? null,
@@ -504,7 +516,7 @@ export async function upsertTopupPaymentAttempt(input: {
 }
 
 export async function findTopupByPayment(payment: YookassaPayment) {
-  const metadataTopupId = String(payment.metadata?.topup_id ?? "").trim();
+  const metadataTopupId = String(payment.metadata?.internal_topup_id ?? payment.metadata?.topup_id ?? "").trim();
   if (metadataTopupId) {
     const byId = await prisma.organizationTopup.findUnique({
       where: { id: metadataTopupId },
@@ -515,11 +527,11 @@ export async function findTopupByPayment(payment: YookassaPayment) {
     }
   }
 
-  const invoiceId = String(payment.invoice_details?.id ?? "").trim();
-  if (invoiceId) {
+  const paymentId = String(payment.id || "").trim();
+  if (paymentId) {
     return prisma.organizationTopup.findFirst({
       where: {
-        providerInvoiceId: invoiceId
+        providerPaymentId: paymentId
       },
       include: {
         user: true,
@@ -721,7 +733,7 @@ export async function processPaymentSucceeded(input: {
   if (finalize.credited) {
     await sendTopupFinalizedMessages({
       userId: finalize.userId,
-      success: true
+      outcome: "paid"
     });
   }
 
@@ -758,87 +770,33 @@ export async function processPaymentCanceled(input: {
     };
   }
 
-  const invoiceId = String(input.payment.invoice_details?.id || topup.providerInvoiceId || "").trim();
-  if (!invoiceId) {
-    const closeResult = await closeTopupTerminal({
-      topupId: topup.id,
-      terminalStatus: TOPUP_STATUS.CANCELED,
-      providerStatus: input.payment.status,
-      providerPaymentId: input.payment.id,
-      reasonCode: input.payment.cancellation_details?.reason,
-      reasonText: input.payment.cancellation_details?.party
+  const now = new Date();
+  const cancelPolicy = normalizeCancelOutcome({
+    providerReason: input.payment.cancellation_details?.reason,
+    topupExpiresAt: topup.expiresAt,
+    now
+  });
+
+  const closeResult = await closeTopupTerminal({
+    topupId: topup.id,
+    terminalStatus: cancelPolicy.terminalStatus,
+    providerStatus: input.payment.status,
+    providerPaymentId: input.payment.id,
+    reasonCode: cancelPolicy.reasonCode,
+    reasonText: cancelPolicy.reasonText
+  });
+
+  if (closeResult.changed && closeResult.userId) {
+    await sendTopupFinalizedMessages({
+      userId: closeResult.userId,
+      outcome: cancelPolicy.terminalStatus === TOPUP_STATUS.EXPIRED ? "expired" : "canceled"
     });
-
-    if (closeResult.changed && closeResult.userId) {
-      await sendTopupFinalizedMessages({
-        userId: closeResult.userId,
-        success: false
-      });
-    }
-
-    return {
-      handled: true,
-      topup
-    };
   }
 
-  try {
-    const invoice = await yookassaClient.getInvoice(invoiceId);
-    const invoiceExpiresAt = parseDateOrNull(invoice.expires_at) ?? topup.expiresAt;
-    const invoicePaymentId = invoice.payment_details?.id ?? input.payment.id;
-
-    if (invoicePaymentId && invoicePaymentId !== input.payment.id) {
-      const payment = await yookassaClient.getPayment(invoicePaymentId);
-      if (payment.status === "succeeded") {
-        return processPaymentSucceeded({
-          payment,
-          rawPayload: input.rawPayload,
-          source: input.source
-        });
-      }
-    }
-
-    if (invoice.status === "pending" && invoiceExpiresAt.getTime() > Date.now()) {
-      await setTopupPendingPoll({
-        topupId: topup.id,
-        providerStatus: invoice.status,
-        providerPaymentId: invoicePaymentId,
-        expiresAt: invoiceExpiresAt
-      });
-
-      return {
-        handled: true,
-        topup
-      };
-    }
-
-    const isExpired = invoiceExpiresAt.getTime() <= Date.now();
-    const closeResult = await closeTopupTerminal({
-      topupId: topup.id,
-      terminalStatus: isExpired ? TOPUP_STATUS.EXPIRED : TOPUP_STATUS.CANCELED,
-      providerStatus: invoice.status,
-      providerPaymentId: invoicePaymentId,
-      reasonCode: input.payment.cancellation_details?.reason,
-      reasonText: input.payment.cancellation_details?.party
-    });
-
-    if (closeResult.changed && closeResult.userId) {
-      await sendTopupFinalizedMessages({
-        userId: closeResult.userId,
-        success: false
-      });
-    }
-
-    return {
-      handled: true,
-      topup
-    };
-  } catch (error) {
-    if (error instanceof YookassaHttpError && error.retryable) {
-      throw new AppError("Failed to verify invoice state in YooKassa.", 502, "YOOKASSA_TEMPORARY_ERROR");
-    }
-    throw error;
-  }
+  return {
+    handled: true,
+    topup
+  };
 }
 
 export async function reconcileTopupWithProvider(topupId: string) {
@@ -850,93 +808,92 @@ export async function reconcileTopupWithProvider(topupId: string) {
     return;
   }
 
-  if (topup.status === TOPUP_STATUS.PAID || topup.status === TOPUP_STATUS.CANCELED || topup.status === TOPUP_STATUS.EXPIRED) {
+  if (
+    topup.status === TOPUP_STATUS.PAID ||
+    topup.status === TOPUP_STATUS.CANCELED ||
+    topup.status === TOPUP_STATUS.EXPIRED ||
+    topup.status === TOPUP_STATUS.FAILED
+  ) {
     return;
   }
 
-  const invoiceId = String(topup.providerInvoiceId || "").trim();
   const providerPaymentId = String(topup.providerPaymentId || "").trim();
-
-  if (!invoiceId && !providerPaymentId) {
-    await markTopupPollError(topup.id, "Missing provider identifiers.");
+  if (!providerPaymentId) {
+    await markTopupPollError(topup.id, "Missing provider payment id.");
     return;
   }
 
   try {
-    let invoicePaymentId = providerPaymentId || "";
-    let invoiceStatus = topup.providerStatus ?? "pending";
-    let invoiceExpiresAt = topup.expiresAt;
+    const payment = await yookassaClient.getPayment(providerPaymentId);
 
-    if (invoiceId) {
-      const invoice = await yookassaClient.getInvoice(invoiceId);
-      invoiceStatus = invoice.status;
-      invoiceExpiresAt = parseDateOrNull(invoice.expires_at) ?? topup.expiresAt;
-      invoicePaymentId = String(invoice.payment_details?.id || providerPaymentId || "").trim();
+    await prisma.organizationTopup.update({
+      where: { id: topup.id },
+      data: {
+        providerStatus: payment.status,
+        lastProviderSyncAt: new Date(),
+        nextPollAt: new Date(Date.now() + env.PAYMENT_POLL_INTERVAL_SECONDS * 1000)
+      }
+    });
 
-      await prisma.organizationTopup.update({
-        where: { id: topup.id },
-        data: {
-          providerStatus: invoice.status,
-          expiresAt: invoiceExpiresAt,
-          providerPaymentId: invoicePaymentId || undefined,
-          lastProviderSyncAt: new Date()
-        }
+    if (payment.status === "succeeded") {
+      await processPaymentSucceeded({
+        payment,
+        source: "worker"
       });
+      return;
     }
 
-    if (invoicePaymentId) {
-      const payment = await yookassaClient.getPayment(invoicePaymentId);
+    if (payment.status === "canceled") {
+      await processPaymentCanceled({
+        payment,
+        source: "worker"
+      });
+      return;
+    }
 
-      if (payment.status === "succeeded") {
-        await processPaymentSucceeded({
-          payment,
-          source: "worker"
-        });
-        return;
-      }
-
-      if (payment.status === "canceled") {
-        await processPaymentCanceled({
-          payment,
-          source: "worker"
-        });
-        return;
-      }
-
+    const isExpiredByLocalTtl = topup.expiresAt.getTime() <= Date.now();
+    if (!isExpiredByLocalTtl) {
       await setTopupPendingPoll({
         topupId: topup.id,
         providerStatus: payment.status,
         providerPaymentId: payment.id,
-        expiresAt: invoiceExpiresAt
+        expiresAt: topup.expiresAt
       });
       return;
     }
 
-    if (invoiceExpiresAt.getTime() <= Date.now() || invoiceStatus === "canceled") {
-      const closeResult = await closeTopupTerminal({
-        topupId: topup.id,
-        terminalStatus: invoiceExpiresAt.getTime() <= Date.now() ? TOPUP_STATUS.EXPIRED : TOPUP_STATUS.CANCELED,
-        providerStatus: invoiceStatus,
-        reasonCode: "invoice_terminal",
-        reasonText: invoiceStatus
+    const secondCheck = await yookassaClient.getPayment(providerPaymentId);
+    if (secondCheck.status === "succeeded") {
+      await processPaymentSucceeded({
+        payment: secondCheck,
+        source: "worker"
       });
-
-      if (closeResult.changed && closeResult.userId) {
-        await sendTopupFinalizedMessages({
-          userId: closeResult.userId,
-          success: false
-        });
-      }
-
       return;
     }
 
-    await setTopupPendingPoll({
+    if (secondCheck.status === "canceled") {
+      await processPaymentCanceled({
+        payment: secondCheck,
+        source: "worker"
+      });
+      return;
+    }
+
+    const closeResult = await closeTopupTerminal({
       topupId: topup.id,
-      providerStatus: invoiceStatus,
-      providerPaymentId: invoicePaymentId,
-      expiresAt: invoiceExpiresAt
+      terminalStatus: TOPUP_STATUS.EXPIRED,
+      providerStatus: secondCheck.status,
+      providerPaymentId: providerPaymentId,
+      reasonCode: "expired_local_timeout",
+      reasonText: "Pending after local TTL exceeded"
     });
+
+    if (closeResult.changed && closeResult.userId) {
+      await sendTopupFinalizedMessages({
+        userId: closeResult.userId,
+        outcome: "expired"
+      });
+    }
   } catch (error) {
     await markTopupPollError(topup.id, error);
 

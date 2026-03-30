@@ -9,6 +9,25 @@ export function unknownUserMessage(maxUserId: string) {
 Ваш MaxID: ${maxUserId}`;
 }
 
+export function unknownUserSupportKeyboard() {
+  return [
+    {
+      type: "inline_keyboard",
+      payload: {
+        buttons: [
+          [
+            {
+              type: "link",
+              text: "Связаться с поддержкой",
+              url: "max://user/91634403"
+            }
+          ]
+        ]
+      }
+    }
+  ];
+}
+
 export function knownUserUnexpectedMessage(maxUserId: string, remainingPackages: string) {
   return `🆔 Ваш ID: ${maxUserId}
 ☰ Осталось на ${remainingPackages} пакетов для передачи

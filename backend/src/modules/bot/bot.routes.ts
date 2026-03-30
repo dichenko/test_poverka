@@ -38,7 +38,8 @@ import {
   photoRequiredMessage,
   photoSavedAndConfirmedMessage,
   submissionCancelledMessage,
-  unknownUserMessage
+  unknownUserMessage,
+  unknownUserSupportKeyboard
 } from "./bot.templates";
 
 const router = Router();
@@ -353,7 +354,8 @@ async function sendProfileMessage(userId: bigint, fallbackUserIdText?: string) {
       await maxBotClient.sendMessage({
         userId: fallbackUserIdText,
         text: unknownUserMessage(fallbackUserIdText),
-        format: "markdown"
+        format: "markdown",
+        attachments: unknownUserSupportKeyboard()
       });
     }
     return null;
@@ -571,7 +573,8 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: unknownUserMessage(event.userId),
-        format: "markdown"
+        format: "markdown",
+        attachments: unknownUserSupportKeyboard()
       });
       return res.json({ ok: true });
     }
@@ -581,7 +584,8 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: unknownUserMessage(event.userId),
-        format: "markdown"
+        format: "markdown",
+        attachments: unknownUserSupportKeyboard()
       });
       return res.json({ ok: true });
     }

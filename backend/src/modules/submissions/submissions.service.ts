@@ -19,12 +19,12 @@ function resolveTariffKopecks(input: {
   tariffPerPackageKopecks: bigint;
   userTarifLegacy: number | null;
 }): bigint {
-  if (input.tariffPerPackageKopecks > 0n) {
-    return input.tariffPerPackageKopecks;
-  }
-
   if (input.userTarifLegacy != null && Number.isFinite(input.userTarifLegacy) && input.userTarifLegacy > 0) {
     return legacyRublesToKopecks(input.userTarifLegacy);
+  }
+
+  if (input.tariffPerPackageKopecks > 0n) {
+    return input.tariffPerPackageKopecks;
   }
 
   return 0n;

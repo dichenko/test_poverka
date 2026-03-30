@@ -68,12 +68,12 @@ function resolveTariffPerPackageKopecks(input: {
   organizationTariffPerPackageKopecks: bigint;
   organizationUserTarif: number | null;
 }) {
-  if (input.organizationTariffPerPackageKopecks > 0n) {
-    return input.organizationTariffPerPackageKopecks;
-  }
-
   if (input.organizationUserTarif != null && Number.isFinite(input.organizationUserTarif) && input.organizationUserTarif > 0) {
     return legacyRublesToKopecks(input.organizationUserTarif);
+  }
+
+  if (input.organizationTariffPerPackageKopecks > 0n) {
+    return input.organizationTariffPerPackageKopecks;
   }
 
   return 0n;

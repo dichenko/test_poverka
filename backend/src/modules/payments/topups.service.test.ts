@@ -367,7 +367,7 @@ describe("topups.service", () => {
     expect(result.topup.amountKopecks).toBe(300n);
   });
 
-  it("uses organization tariff and ignores user legacy tariff when creating topup", async () => {
+  it("uses organization legacy tariff and ignores user legacy tariff when creating topup", async () => {
     const { service, mockPrisma, mockYookassaClient } = await loadService();
 
     mockPrisma.organizationTopup.findFirst.mockResolvedValue(null);
@@ -391,8 +391,8 @@ describe("topups.service", () => {
       makeTopup({
         id: "9b44b985-7398-4533-9e99-2d979f6a4f66",
         packagesCount: 2,
-        tariffPerPackageKopecks: 200n,
-        amountKopecks: 400n,
+        tariffPerPackageKopecks: 100n,
+        amountKopecks: 200n,
         providerPaymentId: null,
         providerConfirmationUrl: null
       })
@@ -411,8 +411,8 @@ describe("topups.service", () => {
     expect(mockPrisma.organizationTopup.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          tariffPerPackageKopecks: 200n,
-          amountKopecks: 400n
+          tariffPerPackageKopecks: 100n,
+          amountKopecks: 200n
         })
       })
     );

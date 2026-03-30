@@ -13,15 +13,15 @@ function resolveTariffKopecks(input: {
   organizationTariffKopecks: bigint;
   organizationTariffLegacy: number | null;
 }): bigint {
-  if (input.organizationTariffKopecks > 0n) {
-    return input.organizationTariffKopecks;
-  }
   if (
     input.organizationTariffLegacy != null &&
     Number.isFinite(input.organizationTariffLegacy) &&
     input.organizationTariffLegacy > 0
   ) {
     return legacyRublesToKopecks(input.organizationTariffLegacy);
+  }
+  if (input.organizationTariffKopecks > 0n) {
+    return input.organizationTariffKopecks;
   }
   return 0n;
 }

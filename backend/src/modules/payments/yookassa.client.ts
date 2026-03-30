@@ -37,6 +37,20 @@ export interface YookassaCreatePaymentPayload {
   };
   description: string;
   metadata: Record<string, string>;
+  receipt?: {
+    customer: {
+      email?: string;
+      phone?: string;
+    };
+    items: Array<{
+      description: string;
+      quantity: string;
+      amount: YookassaAmount;
+      vat_code: number;
+      payment_mode?: "full_prepayment" | "prepayment" | "advance" | "full_payment" | "partial_payment" | "credit" | "credit_payment";
+      payment_subject?: "commodity" | "excise" | "job" | "service" | "gambling_bet" | "gambling_prize" | "lottery" | "lottery_prize" | "intellectual_activity" | "payment" | "agent_commission" | "composite" | "another";
+    }>;
+  };
 }
 
 function isRetryableStatus(status: number) {

@@ -26,6 +26,7 @@ const envSchema = z.object({
   YOOKASSA_SHOP_ID: z.string().min(1),
   YOOKASSA_SECRET_KEY: z.string().min(1),
   YOOKASSA_CURRENCY: z.string().min(1).default("RUB"),
+  YOOKASSA_RECEIPT_VAT_CODE: z.coerce.number().int().min(1).max(6).default(1),
   YOOKASSA_RETURN_URL: z.string().url(),
   YOOKASSA_WEBHOOK_URL: z.string().url().optional(),
   YOOKASSA_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(defaultYookassaTimeoutMs),

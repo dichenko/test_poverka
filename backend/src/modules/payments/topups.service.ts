@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+﻿import { Prisma } from "@prisma/client";
 import { AppError } from "../../common/app-error";
 import { logger } from "../../common/logger";
 import { prisma } from "../../common/prisma";
@@ -84,6 +84,76 @@ function resolveTariffPerPackageKopecks(input: {
   return 0n;
 }
 
+function normalizeEmail(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function normalizePhone(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const raw = value.trim();
+  if (!raw) {
+    return null;
+  }
+
+  const hasPlus = raw.startsWith("+");
+  let digits = raw.replace(/\D+/g, "");
+  if (!digits) {
+    return null;
+  }
+
+  if (!hasPlus && digits.length === 10) {
+    digits = `7${digits}`;
+  }
+
+  if (!hasPlus && digits.length === 11 && digits.startsWith("8")) {
+    digits = `7${digits.slice(1)}`;
+  }
+
+  if (digits.length < 10 || digits.length > 15) {
+    return null;
+  }
+
+  return `+${digits}`;
+}
+
+function resolveReceiptCustomer(input: {
+  userPhone: string | null;
+  userOrgEmail: string | null;
+  organizationEmail: string | null;
+}) {
+  const email = normalizeEmail(input.organizationEmail) ?? normalizeEmail(input.userOrgEmail);
+  const phone = normalizePhone(input.userPhone);
+
+  if (!email && !phone) {
+    throw new AppError(
+      "РќРµ СѓРґР°Р»РѕСЃСЊ СЃС„РѕСЂРјРёСЂРѕРІР°С‚СЊ С‡РµРє РґР»СЏ РѕРїР»Р°С‚С‹: РЅСѓР¶РµРЅ email РѕСЂРіР°РЅРёР·Р°С†РёРё РёР»Рё С‚РµР»РµС„РѕРЅ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
+      409,
+      PAYMENT_ERROR_CODES.TOPUP_RECEIPT_CONTACT_REQUIRED
+    );
+  }
+
+  return {
+    ...(email ? { email } : {}),
+    ...(phone ? { phone } : {})
+  };
+}
+
 function formatMoscowDateTime(value: Date) {
   return new Intl.DateTimeFormat("ru-RU", {
     timeZone: "Europe/Moscow",
@@ -115,12 +185,12 @@ function isActiveTopupUniqueViolation(error: unknown) {
 
 function validatePackagesCount(packagesCount: number) {
   if (!Number.isInteger(packagesCount) || packagesCount <= 0) {
-    throw new AppError("Введите целое положительное число пакетов.", 400, PAYMENT_ERROR_CODES.TOPUP_INVALID_PACKAGES_COUNT);
+    throw new AppError("Р’РІРµРґРёС‚Рµ С†РµР»РѕРµ РїРѕР»РѕР¶РёС‚РµР»СЊРЅРѕРµ С‡РёСЃР»Рѕ РїР°РєРµС‚РѕРІ.", 400, PAYMENT_ERROR_CODES.TOPUP_INVALID_PACKAGES_COUNT);
   }
 
   if (packagesCount < env.PAYMENT_MIN_PACKAGES_PER_TOPUP || packagesCount > env.PAYMENT_MAX_PACKAGES_PER_TOPUP) {
     throw new AppError(
-      `Количество пакетов должно быть от ${env.PAYMENT_MIN_PACKAGES_PER_TOPUP} до ${env.PAYMENT_MAX_PACKAGES_PER_TOPUP}.`,
+      `РљРѕР»РёС‡РµСЃС‚РІРѕ РїР°РєРµС‚РѕРІ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РѕС‚ ${env.PAYMENT_MIN_PACKAGES_PER_TOPUP} РґРѕ ${env.PAYMENT_MAX_PACKAGES_PER_TOPUP}.`,
       400,
       PAYMENT_ERROR_CODES.TOPUP_INVALID_PACKAGES_COUNT
     );
@@ -155,17 +225,17 @@ async function sendTopupFinalizedMessages(input: { userId: bigint; outcome: Fina
   if (input.outcome === "paid") {
     await maxBotClient.sendMessage({
       userId: input.userId.toString(),
-      text: "Платеж прошел, средства зачислены на ваш счет"
+      text: "РџР»Р°С‚РµР¶ РїСЂРѕС€РµР», СЃСЂРµРґСЃС‚РІР° Р·Р°С‡РёСЃР»РµРЅС‹ РЅР° РІР°С€ СЃС‡РµС‚"
     });
   } else if (input.outcome === "canceled") {
     await maxBotClient.sendMessage({
       userId: input.userId.toString(),
-      text: "Платеж отменен"
+      text: "РџР»Р°С‚РµР¶ РѕС‚РјРµРЅРµРЅ"
     });
   } else {
     await maxBotClient.sendMessage({
       userId: input.userId.toString(),
-      text: "Время оплаты истекло, платеж отменен"
+      text: "Р’СЂРµРјСЏ РѕРїР»Р°С‚С‹ РёСЃС‚РµРєР»Рѕ, РїР»Р°С‚РµР¶ РѕС‚РјРµРЅРµРЅ"
     });
   }
 
@@ -199,8 +269,8 @@ export function getTopupPaymentLinkMessage(topup: {
   amountKopecks: bigint;
   providerConfirmationUrl: string | null;
 }) {
-  const url = topup.providerConfirmationUrl || "(ссылка недоступна)";
-  return `Для оплаты пройдите по ссылке: ${url}\nВремя для оплаты: ${USER_TOPUP_LINK_TTL_MINUTES} минуты, после этого ссылка становится недействительной.`;
+  const url = topup.providerConfirmationUrl || "(СЃСЃС‹Р»РєР° РЅРµРґРѕСЃС‚СѓРїРЅР°)";
+  return `Р”Р»СЏ РѕРїР»Р°С‚С‹ РїСЂРѕР№РґРёС‚Рµ РїРѕ СЃСЃС‹Р»РєРµ: ${url}\nР’СЂРµРјСЏ РґР»СЏ РѕРїР»Р°С‚С‹: ${USER_TOPUP_LINK_TTL_MINUTES} РјРёРЅСѓС‚С‹, РїРѕСЃР»Рµ СЌС‚РѕРіРѕ СЃСЃС‹Р»РєР° СЃС‚Р°РЅРѕРІРёС‚СЃСЏ РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅРѕР№.`;
 }
 
 export function getActiveTopupUserMessage(topup: {
@@ -209,10 +279,10 @@ export function getActiveTopupUserMessage(topup: {
   expiresAt: Date;
 }) {
   const amountRub = formatKopecksAsRubles(topup.amountKopecks);
-  const url = topup.providerConfirmationUrl || "(ссылка недоступна)";
+  const url = topup.providerConfirmationUrl || "(СЃСЃС‹Р»РєР° РЅРµРґРѕСЃС‚СѓРїРЅР°)";
   const expiresAt = formatMoscowDateTime(topup.expiresAt);
 
-  return `У тебя есть незавершенный платеж на ${amountRub}.\nОплати его по ссылке: ${url}\nСрок действия до ${expiresAt}.`;
+  return `РЈ С‚РµР±СЏ РµСЃС‚СЊ РЅРµР·Р°РІРµСЂС€РµРЅРЅС‹Р№ РїР»Р°С‚РµР¶ РЅР° ${amountRub}.\nРћРїР»Р°С‚Рё РµРіРѕ РїРѕ СЃСЃС‹Р»РєРµ: ${url}\nРЎСЂРѕРє РґРµР№СЃС‚РІРёСЏ РґРѕ ${expiresAt}.`;
 }
 
 export async function getActiveTopupForUser(userIdRaw: string | bigint) {
@@ -283,7 +353,7 @@ export async function createOrReuseTopupForUser(input: {
   });
 
   if (tariffPerPackageKopecks <= 0n) {
-    throw new AppError("Тариф организации не настроен.", 409, "ORG_TARIFF_NOT_CONFIGURED");
+    throw new AppError("РўР°СЂРёС„ РѕСЂРіР°РЅРёР·Р°С†РёРё РЅРµ РЅР°СЃС‚СЂРѕРµРЅ.", 409, "ORG_TARIFF_NOT_CONFIGURED");
   }
 
   const amountKopecks = BigInt(input.packagesCount) * tariffPerPackageKopecks;
@@ -332,12 +402,19 @@ export async function createOrReuseTopupForUser(input: {
   }
 
   try {
-    const description = `Пополнение баланса организации на ${input.packagesCount} пакетов`;
+    const description = `РџРѕРїРѕР»РЅРµРЅРёРµ Р±Р°Р»Р°РЅСЃР° РѕСЂРіР°РЅРёР·Р°С†РёРё РЅР° ${input.packagesCount} РїР°РєРµС‚РѕРІ`;
+
+    const amountValue = kopecksToYookassaAmount(amountKopecks);
+    const receiptCustomer = resolveReceiptCustomer({
+      userPhone: user.phone,
+      userOrgEmail: user.orgEmail,
+      organizationEmail: user.organization.email
+    });
 
     const payment = await yookassaClient.createPayment(
       {
         amount: {
-          value: kopecksToYookassaAmount(amountKopecks),
+          value: amountValue,
           currency: env.YOOKASSA_CURRENCY
         },
         capture: true,
@@ -352,6 +429,22 @@ export async function createOrReuseTopupForUser(input: {
           packages_count: String(input.packagesCount),
           tariff_per_package_kopecks: tariffPerPackageKopecks.toString(),
           internal_topup_id: topup.id
+        },
+        receipt: {
+          customer: receiptCustomer,
+          items: [
+            {
+              description,
+              quantity: "1.00",
+              amount: {
+                value: amountValue,
+                currency: env.YOOKASSA_CURRENCY
+              },
+              vat_code: env.YOOKASSA_RECEIPT_VAT_CODE,
+              payment_mode: "full_prepayment",
+              payment_subject: "service"
+            }
+          ]
         }
       },
       idempotenceKey
@@ -407,7 +500,11 @@ export async function createOrReuseTopupForUser(input: {
       "Failed to create YooKassa payment"
     );
 
-    throw new AppError("Не удалось создать ссылку на оплату. Попробуйте снова через минуту.", 502, PAYMENT_ERROR_CODES.TOPUP_CREATE_FAILED);
+    if (error instanceof AppError) {
+      throw error;
+    }
+
+    throw new AppError("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ СЃСЃС‹Р»РєСѓ РЅР° РѕРїР»Р°С‚Сѓ. РџРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР° С‡РµСЂРµР· РјРёРЅСѓС‚Сѓ.", 502, PAYMENT_ERROR_CODES.TOPUP_CREATE_FAILED);
   }
 }
 
@@ -991,3 +1088,4 @@ export async function fetchPaymentForWebhookObject(input: {
 
   return yookassaClient.getPayment(paymentId);
 }
+

@@ -190,9 +190,12 @@ describe("topups.service", () => {
     mockPrisma.user.findUnique.mockResolvedValue({
       id: 101n,
       organizationId: 77n,
+      phone: "+79000000000",
+      orgEmail: null,
       userTarif: null,
       organization: {
         id: 77n,
+        email: "org@example.com",
         tariffPerPackageKopecks: 200n,
         userTarif: null,
         balanceKopecks: 1000n,
@@ -240,9 +243,12 @@ describe("topups.service", () => {
     mockPrisma.user.findUnique.mockResolvedValue({
       id: 101n,
       organizationId: 77n,
+      phone: "+79000000000",
+      orgEmail: null,
       userTarif: null,
       organization: {
         id: 77n,
+        email: "org@example.com",
         tariffPerPackageKopecks: 200n,
         userTarif: null,
         balanceKopecks: 1000n,
@@ -278,6 +284,44 @@ describe("topups.service", () => {
     );
   });
 
+  it("returns explicit error when receipt contact data is missing", async () => {
+    const { service, mockPrisma, mockYookassaClient } = await loadService();
+
+    mockPrisma.organizationTopup.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: 101n,
+      organizationId: 77n,
+      phone: null,
+      orgEmail: null,
+      userTarif: null,
+      organization: {
+        id: 77n,
+        email: null,
+        tariffPerPackageKopecks: 200n,
+        userTarif: null,
+        balanceKopecks: 1000n,
+        balance: null
+      }
+    });
+
+    mockPrisma.organizationTopup.create.mockResolvedValue(
+      makeTopup({
+        id: "88f247f0-99ec-4792-8f66-aef7e9f35e00",
+        amountKopecks: 400n,
+        tariffPerPackageKopecks: 200n,
+        packagesCount: 2,
+        providerPaymentId: null,
+        providerConfirmationUrl: null
+      })
+    );
+
+    await expect(service.createOrReuseTopupForUser({ userIdRaw: "101", packagesCount: 2 })).rejects.toMatchObject({
+      code: "TOPUP_RECEIPT_CONTACT_REQUIRED"
+    });
+
+    expect(mockYookassaClient.createPayment).not.toHaveBeenCalled();
+  });
+
   it("keeps tariff snapshot for created topup", async () => {
     const { service, mockPrisma, mockYookassaClient } = await loadService();
 
@@ -285,9 +329,12 @@ describe("topups.service", () => {
     mockPrisma.user.findUnique.mockResolvedValue({
       id: 101n,
       organizationId: 77n,
+      phone: "+79000000000",
+      orgEmail: null,
       userTarif: null,
       organization: {
         id: 77n,
+        email: "org@example.com",
         tariffPerPackageKopecks: 150n,
         userTarif: null,
         balanceKopecks: 1000n,

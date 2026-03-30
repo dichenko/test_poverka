@@ -5,3 +5,4 @@ npm-debug.log*
 postgres-data/
 pgadmin-data/
 project_rules.md
+db_tables_overview.md

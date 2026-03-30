@@ -1,5 +1,7 @@
-﻿import { SubmissionStatus, WaterType } from "@prisma/client";
+import { SubmissionStatus, WaterType } from "@prisma/client";
 import { z } from "zod";
+
+const FACTORY_NUMBER_REGEX = /^[0-9A-Za-zА-Яа-яЁё]+$/u;
 
 export const createDraftSubmissionSchema = z.object({
   address: z.string().trim().min(3).max(255),
@@ -9,7 +11,12 @@ export const createDraftSubmissionSchema = z.object({
     .regex(/^\d{10}$/, "phone must contain exactly 10 digits"),
   waterType: z.nativeEnum(WaterType),
   equipmentTypeId: z.coerce.number().int().positive(),
-  factoryNumber: z.string().trim().regex(/^\d+$/, "factoryNumber must be numeric").max(64),
+  factoryNumber: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(FACTORY_NUMBER_REGEX, "factoryNumber must contain only letters and digits"),
   productionYear: z.coerce.number().int().min(1950).max(2050),
   reading: z
     .string()

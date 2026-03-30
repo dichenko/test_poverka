@@ -15,6 +15,7 @@ import {
 import { YookassaHttpError, type YookassaPayment, yookassaClient } from "./yookassa.client";
 
 const USER_TOPUP_LINK_TTL_MINUTES = Math.ceil(env.TOPUP_LINK_TTL_SECONDS / 60);
+const YOOKASSA_PAYMENT_DESCRIPTION = "Организация работ по поверке";
 
 type TopupWithRelations = Prisma.OrganizationTopupGetPayload<{
   include: {
@@ -384,7 +385,7 @@ export async function createOrReuseTopupForUser(input: {
   }
 
   try {
-    const description = `Пополнение баланса организации на ${input.packagesCount} пакетов`;
+    const description = YOOKASSA_PAYMENT_DESCRIPTION;
 
     const amountValue = rublesToYookassaAmount(amountRubles);
     const receiptCustomer = resolveReceiptCustomer({

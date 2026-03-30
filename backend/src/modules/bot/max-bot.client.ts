@@ -6,6 +6,7 @@ interface SendMessagePayload {
   text: string;
   miniappUrl?: string;
   attachments?: Array<Record<string, any>>;
+  format?: "markdown" | "html";
 }
 
 interface SendMessageResult {
@@ -38,7 +39,8 @@ export class MaxBotClient {
     const text = payload.miniappUrl ? `${payload.text}\n\n${payload.miniappUrl}` : payload.text;
     const body = {
       text,
-      attachments: payload.attachments ?? []
+      attachments: payload.attachments ?? [],
+      format: payload.format
     };
 
     try {

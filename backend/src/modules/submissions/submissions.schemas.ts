@@ -2,6 +2,7 @@ import { SubmissionStatus, WaterType } from "@prisma/client";
 import { z } from "zod";
 
 const FACTORY_NUMBER_REGEX = /^[0-9A-Za-zА-Яа-яЁё]+$/u;
+const CUSTOM_EQUIPMENT_TYPE_MAX_LENGTH = 120;
 
 export const createDraftSubmissionSchema = z.object({
   address: z.string().trim().min(3).max(255),
@@ -10,7 +11,8 @@ export const createDraftSubmissionSchema = z.object({
     .trim()
     .regex(/^\d{10}$/, "phone must contain exactly 10 digits"),
   waterType: z.nativeEnum(WaterType),
-  equipmentTypeId: z.coerce.number().int().positive(),
+  equipmentTypeId: z.coerce.number().int().positive().nullable(),
+  customEquipmentTypeName: z.string().trim().max(CUSTOM_EQUIPMENT_TYPE_MAX_LENGTH).nullish(),
   factoryNumber: z
     .string()
     .trim()
@@ -22,6 +24,25 @@ export const createDraftSubmissionSchema = z.object({
     .string()
     .trim()
     .regex(/^\d+([.,]\d{1,3})?$/, "reading must be numeric")
+}).superRefine((value, ctx) => {
+  const hasEquipmentTypeId = value.equipmentTypeId !== null;
+  const customTypeName = value.customEquipmentTypeName?.trim() ?? "";
+
+  if (!hasEquipmentTypeId && customTypeName.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["customEquipmentTypeName"],
+      message: "customEquipmentTypeName is required when equipmentTypeId is empty"
+    });
+  }
+
+  if (hasEquipmentTypeId && customTypeName.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["customEquipmentTypeName"],
+      message: "customEquipmentTypeName must be empty when equipmentTypeId is set"
+    });
+  }
 });
 
 export const confirmSubmissionParamsSchema = z.object({

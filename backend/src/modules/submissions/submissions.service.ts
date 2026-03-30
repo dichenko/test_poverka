@@ -45,7 +45,8 @@ export async function createDraftSubmission(input: {
   address: string;
   phone: string;
   waterType: WaterType;
-  equipmentTypeId: number;
+  equipmentTypeId: number | null;
+  customEquipmentTypeName?: string | null;
   factoryNumber: string;
   productionYear: number;
   reading: string;
@@ -62,11 +63,28 @@ export async function createDraftSubmission(input: {
     throw new AppError("Organization is required for submission.", 403, "ORG_REQUIRED");
   }
 
-  const equipmentType = await prisma.equipmentType.findUnique({
-    where: { id: input.equipmentTypeId }
-  });
-  if (!equipmentType) {
-    throw new AppError("Equipment type not found.", 400, "EQUIPMENT_TYPE_NOT_FOUND");
+  const normalizedCustomEquipmentTypeName = input.customEquipmentTypeName?.trim() || null;
+  const hasEquipmentTypeId = input.equipmentTypeId !== null;
+
+  if (!hasEquipmentTypeId && !normalizedCustomEquipmentTypeName) {
+    throw new AppError("Equipment type is required.", 400, "EQUIPMENT_TYPE_REQUIRED");
+  }
+
+  if (hasEquipmentTypeId && normalizedCustomEquipmentTypeName) {
+    throw new AppError(
+      "Only one equipment type mode is allowed: predefined type or custom text.",
+      400,
+      "EQUIPMENT_TYPE_CONFLICT"
+    );
+  }
+
+  if (input.equipmentTypeId !== null) {
+    const equipmentType = await prisma.equipmentType.findUnique({
+      where: { id: input.equipmentTypeId }
+    });
+    if (!equipmentType) {
+      throw new AppError("Equipment type not found.", 400, "EQUIPMENT_TYPE_NOT_FOUND");
+    }
   }
 
   ensureOrganizationCanSubmit({
@@ -94,6 +112,7 @@ export async function createDraftSubmission(input: {
         phone: input.phone,
         waterType: input.waterType,
         equipmentTypeId: input.equipmentTypeId,
+        customEquipmentTypeName: normalizedCustomEquipmentTypeName,
         productionYear: input.productionYear,
         awaitingPhoto: false,
         confirmedAt: null
@@ -124,6 +143,7 @@ export async function createDraftSubmission(input: {
       phone: input.phone,
       waterType: input.waterType,
       equipmentTypeId: input.equipmentTypeId,
+      customEquipmentTypeName: normalizedCustomEquipmentTypeName,
       productionYear: input.productionYear,
       status: SubmissionStatus.PENDING_CONFIRMATION,
       awaitingPhoto: false

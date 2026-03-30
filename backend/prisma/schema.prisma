@@ -91,6 +91,7 @@ model MeterSubmission {
   phone           String?          @map("phone")
   waterType       WaterType?       @map("water_type")
   equipmentTypeId Int?             @map("equipment_type_id")
+  customEquipmentTypeName String?  @map("custom_equipment_type_name")
   productionYear  Int?             @map("production_year")
   awaitingPhoto   Boolean          @default(false) @map("awaiting_photo")
   status          SubmissionStatus

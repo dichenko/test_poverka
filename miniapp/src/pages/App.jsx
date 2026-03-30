@@ -13,20 +13,54 @@ import { createDraftSubmission, getLatestPendingSubmission, listEquipmentTypes }
 import { useAuth } from "../hooks/useAuth";
 import { closeWebApp } from "../lib/maxWebApp";
 
-const submissionSchema = z.object({
-  address: z.string().trim().min(3, "Р В РІР‚в„ўР В Р вЂ Р В Р’ВµР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В Р’В°Р В РўвЂР РЋР вЂљР В Р’ВµР РЋР С“"),
-  phone: z.string().trim().regex(/^\d{10}$/, "Р В РІР‚в„ўР В Р вЂ Р В Р’ВµР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р вЂ¦Р В РЎвЂў 10 Р РЋРІР‚В Р В РЎвЂР РЋРІР‚С›Р РЋР вЂљ Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р В Р’В»Р В Р’Вµ +7"),
-  waterType: z.enum(["HVS", "GVS"], { message: "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р В Р вЂ Р В РЎвЂўР В РўвЂР РЋРІР‚в„–" }),
-  equipmentTypeId: z.string().trim().regex(/^\d+$/, "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р РЋР С“Р РЋРІР‚РЋР В Р’ВµР РЋРІР‚С™Р РЋРІР‚РЋР В РЎвЂР В РЎвЂќР В Р’В°"),
-  factoryNumber: z.string().trim().regex(/^[0-9A-Za-zА-Яа-яЁё]+$/u, "Введите заводской номер (буквы и цифры)"),
-  productionYear: z
-    .string()
-    .trim()
-    .refine((value) => /^\d{4}$/.test(value) && Number(value) >= 1950 && Number(value) <= 2050, {
-      message: "Р В РІР‚СљР В РЎвЂўР В РўвЂ Р В Р вЂ Р РЋРІР‚в„–Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р В РЎвЂќР В Р’В° Р В РўвЂР В РЎвЂўР В Р’В»Р В Р’В¶Р В Р’ВµР В Р вЂ¦ Р В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂўР РЋРІР‚С™ 1950 Р В РўвЂР В РЎвЂў 2050"
-    }),
-  reading: z.string().trim().regex(/^\d+([.,]\d{1,3})?$/, "Р В РІР‚в„ўР В Р вЂ Р В Р’ВµР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В РЎвЂќР В РЎвЂўР РЋР вЂљР РЋР вЂљР В Р’ВµР В РЎвЂќР РЋРІР‚С™Р В Р вЂ¦Р В РЎвЂўР В Р’Вµ Р РЋРІР‚РЋР В РЎвЂР РЋР С“Р В Р’В»Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ")
-});
+const OTHER_EQUIPMENT_TYPE_VALUE = "other";
+
+const submissionSchema = z
+  .object({
+    address: z.string().trim().min(3, "Введите корректный адрес"),
+    phone: z.string().trim().regex(/^\d{10}$/, "Введите телефон из 10 цифр без +7"),
+    waterType: z.enum(["HVS", "GVS"], { message: "Выберите тип воды" }),
+    equipmentTypeId: z.string().trim().min(1, "Выберите тип счетчика"),
+    customEquipmentTypeName: z.string().trim().max(120, "Слишком длинный тип счетчика").optional(),
+    factoryNumber: z.string().trim().regex(/^[0-9A-Za-zА-Яа-яЁё]+$/u, "Введите заводской номер (буквы и цифры)"),
+    productionYear: z
+      .string()
+      .trim()
+      .refine((value) => /^\d{4}$/.test(value) && Number(value) >= 1950 && Number(value) <= 2050, {
+        message: "Год выпуска должен быть в диапазоне 1950-2050"
+      }),
+    reading: z.string().trim().regex(/^\d+([.,]\d{1,3})?$/, "Показания должны быть числом")
+  })
+  .superRefine((value, ctx) => {
+    const customType = value.customEquipmentTypeName?.trim() ?? "";
+
+    if (value.equipmentTypeId === OTHER_EQUIPMENT_TYPE_VALUE) {
+      if (!customType) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["customEquipmentTypeName"],
+          message: "Введите тип счетчика"
+        });
+      }
+      return;
+    }
+
+    if (!/^\d+$/.test(value.equipmentTypeId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["equipmentTypeId"],
+        message: "Выберите тип счетчика"
+      });
+    }
+
+    if (customType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["customEquipmentTypeName"],
+        message: "Поле другого типа доступно только для варианта \"Другая\""
+      });
+    }
+  });
 
 function StatusScreen({ title, description, code }) {
   return (
@@ -84,6 +118,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
     phone: "",
     waterType: "HVS",
     equipmentTypeId: "",
+    customEquipmentTypeName: "",
     factoryNumber: "",
     productionYear: "",
     reading: ""
@@ -117,7 +152,12 @@ function UserPanel({ accessToken, canSubmitInitially }) {
         address: data.submission.address || "",
         phone: data.submission.phone || "",
         waterType: data.submission.waterType || "HVS",
-        equipmentTypeId: data.submission.equipmentTypeId ? String(data.submission.equipmentTypeId) : "",
+        equipmentTypeId: data.submission.equipmentTypeId
+          ? String(data.submission.equipmentTypeId)
+          : data.submission.customEquipmentTypeName
+            ? OTHER_EQUIPMENT_TYPE_VALUE
+            : "",
+        customEquipmentTypeName: data.submission.customEquipmentTypeName || "",
         factoryNumber: data.submission.factoryNumber || "",
         productionYear: data.submission.productionYear ? String(data.submission.productionYear) : "",
         reading: data.submission.reading || ""
@@ -142,9 +182,11 @@ function UserPanel({ accessToken, canSubmitInitially }) {
     }
     try {
       setLoading(true);
+      const isCustomEquipmentType = parsed.data.equipmentTypeId === OTHER_EQUIPMENT_TYPE_VALUE;
       const payload = {
         ...parsed.data,
-        equipmentTypeId: Number(parsed.data.equipmentTypeId)
+        equipmentTypeId: isCustomEquipmentType ? null : Number(parsed.data.equipmentTypeId),
+        customEquipmentTypeName: isCustomEquipmentType ? parsed.data.customEquipmentTypeName?.trim() || null : null
       };
       await createDraftSubmission(payload, accessToken);
       setActiveTopupMessage("");
@@ -225,7 +267,14 @@ function UserPanel({ accessToken, canSubmitInitially }) {
             <select
               id="equipmentTypeId"
               value={form.equipmentTypeId}
-              onChange={(event) => setForm((prev) => ({ ...prev, equipmentTypeId: event.target.value }))}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  equipmentTypeId: event.target.value,
+                  customEquipmentTypeName:
+                    event.target.value === OTHER_EQUIPMENT_TYPE_VALUE ? prev.customEquipmentTypeName : ""
+                }))
+              }
             >
               <option value="">Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ”</option>
               {equipmentTypes.map((item) => (
@@ -233,9 +282,24 @@ function UserPanel({ accessToken, canSubmitInitially }) {
                   {item.name}
                 </option>
               ))}
+              <option value={OTHER_EQUIPMENT_TYPE_VALUE}>Другая</option>
             </select>
           </div>
         </div>
+        {form.equipmentTypeId === OTHER_EQUIPMENT_TYPE_VALUE ? (
+          <div className="field">
+            <label htmlFor="customEquipmentTypeName">Укажите тип счетчика</label>
+            <input
+              id="customEquipmentTypeName"
+              value={form.customEquipmentTypeName}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, customEquipmentTypeName: event.target.value }))
+              }
+              placeholder="Введите тип счетчика"
+              maxLength={120}
+            />
+          </div>
+        ) : null}
         <div className="row">
           <div className="field" style={{ flex: "1 1 180px" }}>
             <label htmlFor="factoryNumber">Р В РІР‚вЂќР В Р’В°Р В Р вЂ Р В РЎвЂўР В РўвЂР РЋР С“Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“ Р В Р вЂ¦Р В РЎвЂўР В РЎВР В Р’ВµР РЋР вЂљ</label>

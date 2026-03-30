@@ -47,6 +47,13 @@ function reviewKeyboard(submissionId: string) {
   ];
 }
 
+function resolveEquipmentTypeName(input: {
+  equipmentType: { name: string } | null;
+  customEquipmentTypeName: string | null;
+}) {
+  return input.equipmentType?.name ?? input.customEquipmentTypeName ?? null;
+}
+
 router.get("/submissions/equipment-types", async (_req, res, next) => {
   try {
     await assertNoActiveTopupForUser(_req.auth!.userId);
@@ -76,7 +83,8 @@ router.get("/submissions/pending/latest", async (req, res, next) => {
             phone: submission.phone,
             waterType: submission.waterType,
             equipmentTypeId: submission.equipmentTypeId,
-            equipmentTypeName: submission.equipmentType?.name ?? null,
+            customEquipmentTypeName: submission.customEquipmentTypeName,
+            equipmentTypeName: resolveEquipmentTypeName(submission),
             factoryNumber: submission.meterNumber,
             productionYear: submission.productionYear,
             reading: submission.currentValue.toString(),
@@ -99,6 +107,7 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
       phone: req.body.phone,
       waterType: req.body.waterType,
       equipmentTypeId: req.body.equipmentTypeId,
+      customEquipmentTypeName: req.body.customEquipmentTypeName,
       factoryNumber: req.body.factoryNumber,
       productionYear: req.body.productionYear,
       reading: req.body.reading
@@ -114,6 +123,7 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
         phone: submission.phone,
         waterType: submission.waterType,
         equipmentTypeId: submission.equipmentTypeId,
+        customEquipmentTypeName: submission.customEquipmentTypeName,
         factoryNumber: submission.meterNumber,
         productionYear: submission.productionYear,
         reading: submission.currentValue.toString()
@@ -127,7 +137,7 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
         address: submission.address,
         phone: submission.phone,
         waterType: submission.waterType,
-        equipmentTypeName: submission.equipmentType?.name ?? null,
+        equipmentTypeName: resolveEquipmentTypeName(submission),
         factoryNumber: submission.meterNumber,
         productionYear: submission.productionYear,
         reading: submission.currentValue.toString()
@@ -147,7 +157,8 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
         phone: submission.phone,
         waterType: submission.waterType,
         equipmentTypeId: submission.equipmentTypeId,
-        equipmentTypeName: submission.equipmentType?.name ?? null,
+        customEquipmentTypeName: submission.customEquipmentTypeName,
+        equipmentTypeName: resolveEquipmentTypeName(submission),
         factoryNumber: submission.meterNumber,
         productionYear: submission.productionYear,
         reading: submission.currentValue.toString(),
@@ -208,7 +219,8 @@ router.get("/submissions/me", validate(listSubmissionsQuerySchema, "query"), asy
         phone: item.phone,
         waterType: item.waterType,
         equipmentTypeId: item.equipmentTypeId,
-        equipmentTypeName: item.equipmentType?.name ?? null,
+        customEquipmentTypeName: item.customEquipmentTypeName,
+        equipmentTypeName: resolveEquipmentTypeName(item),
         factoryNumber: item.meterNumber,
         productionYear: item.productionYear,
         reading: item.currentValue.toString(),

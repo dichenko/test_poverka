@@ -229,8 +229,10 @@ services:
       PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}
+      PUBLIC_FILES_BASE_URL: ${PUBLIC_FILES_BASE_URL:-http://localhost:3000/uploads}
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost:3000}
       REPORTS_STORAGE_DIR: ${REPORTS_STORAGE_DIR:-/app/storage/reports}
-      REPORTS_PUBLIC_BASE_URL: ${REPORTS_PUBLIC_BASE_URL:-http://localhost:3000/public/reports}
+      REPORTS_PUBLIC_BASE_URL: ${REPORTS_PUBLIC_BASE_URL:-}
       REPORTS_CRON: ${REPORTS_CRON:-5 22 * * *}
       REPORTS_TZ: ${REPORTS_TZ:-Europe/Moscow}
       REPORTS_HTTP_PORT: ${REPORTS_HTTP_PORT:-3010}

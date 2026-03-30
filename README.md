@@ -148,13 +148,16 @@ Implemented now:
 
 ```bash
 REPORTS_STORAGE_DIR=/app/storage/reports
-REPORTS_PUBLIC_BASE_URL=https://api.example.com/public/reports
+REPORTS_PUBLIC_BASE_URL=https://api.example.com/uploads/reports
 REPORTS_CRON=5 22 * * *
 REPORTS_TZ=Europe/Moscow
 REPORTS_HTTP_PORT=3010
 REPORTS_LOCK_ID=7342052205
 INTERNAL_API_TOKEN=replace_me_internal_token
 ```
+
+If `REPORTS_PUBLIC_BASE_URL` is empty, report-worker builds it from `PUBLIC_FILES_BASE_URL` as:
+`<PUBLIC_FILES_BASE_URL>/reports` (same approach as photo URLs).
 
 `backend` serves generated files from:
 
@@ -166,20 +169,13 @@ Example output path:
 
 Example public URL:
 
-- `https://api.example.com/public/reports/arshin/Arshin_2026-03-30.xlsx`
+- `https://api.example.com/uploads/reports/arshin/Arshin_2026-03-30.xlsx`
 
 ### Manual run (CLI)
 
-From `backend` directory:
-
 ```bash
-npm run reports:generate -- --report=arshin --date=2026-03-30
-```
-
-Alternative dist command:
-
-```bash
-node dist/report-worker.js generate-report arshin 2026-03-30
+docker exec poverka-bot-max-report-worker \
+  node dist/report-worker.js generate-report arshin 2026-03-30
 ```
 
 ### Manual run (HTTP)
@@ -203,6 +199,7 @@ If `date` is omitted, report-worker uses current date in `REPORTS_TZ`.
   - to `21:59:59`
 - Sort: `confirmed_at ASC`, then `meter_submissions.id ASC`
 - Photos are aggregated into one cell (`string_agg(..., E'\n')`) to avoid duplicate rows.
+- For one `report_code + date`, only one file/record is stored: repeated run rewrites the same file and updates metadata in `generated_reports`.
 
 ## YooKassa Topups
 

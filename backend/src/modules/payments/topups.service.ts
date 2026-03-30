@@ -236,7 +236,8 @@ async function sendTopupFinalizedMessages(input: { userId: bigint; outcome: Fina
   await maxBotClient.sendMessage({
     userId: input.userId.toString(),
     text: profile.text,
-    attachments: profile.attachments
+    attachments: profile.attachments,
+    format: profile.format
   });
 }
 

@@ -31,13 +31,13 @@ export function profileMessage(input: {
   organizationName: string | null;
   remainingPackages: string;
 }) {
-  return `Профиль пользователя:
-🆔 ID: ${input.maxUserId}
-👤 ФИО: ${input.fullName}
-🏢 Организация: ${input.organizationName || "-"}
-☰ Осталось пакетов: ${input.remainingPackages}
-☎ Связь с админом @HelpMetr
-📞 Связь с админом +79370332222`;
+  const organizationName = input.organizationName || "-";
+  return `Профиль пользователя:<br>
+🆔 ID: ${escapeHtml(input.maxUserId)}<br>
+👤 ФИО: ${escapeHtml(input.fullName)}<br>
+🏢 Организация: ${escapeHtml(organizationName)}<br>
+☰ Осталось пакетов: ${escapeHtml(input.remainingPackages)}<br>
+☎ Связь с админом <a href="max://user/91634403">Метрология ГК</a>`;
 }
 
 export function submissionReviewMessage(input: {

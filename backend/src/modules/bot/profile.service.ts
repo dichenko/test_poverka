@@ -25,6 +25,7 @@ export interface UserProfilePayload {
   remainingPackages: string;
   text: string;
   attachments: Array<Record<string, any>>;
+  format: "html" | "markdown";
 }
 
 export async function getUserProfilePayload(userId: bigint): Promise<UserProfilePayload | null> {
@@ -57,7 +58,8 @@ export async function getUserProfilePayload(userId: bigint): Promise<UserProfile
     },
     remainingPackages,
     text: profile.text,
-    attachments: profile.attachments
+    attachments: profile.attachments,
+    format: profile.format
   };
 }
 
@@ -71,7 +73,8 @@ export async function sendUserProfileMessage(userId: string | bigint) {
   const sent = await maxBotClient.sendMessage({
     userId: numericUserId.toString(),
     text: profile.text,
-    attachments: profile.attachments
+    attachments: profile.attachments,
+    format: profile.format
   });
 
   return {

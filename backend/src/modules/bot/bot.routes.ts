@@ -386,7 +386,8 @@ async function sendProfileMessage(userId: bigint, fallbackUserIdText?: string) {
   await maxBotClient.sendMessage({
     userId: userId.toString(),
     text: profile.text,
-    attachments: profile.attachments
+    attachments: profile.attachments,
+    format: profile.format
   });
 
   return profile;

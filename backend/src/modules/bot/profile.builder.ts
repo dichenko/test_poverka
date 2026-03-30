@@ -1,3 +1,5 @@
+import { profileMessage } from "./bot.templates";
+
 export const TOPUP_BALANCE_CALLBACK_PAYLOAD = "topup_balance";
 
 export interface UserProfileMessageInput {
@@ -28,9 +30,8 @@ export function buildTopupBalanceKeyboard() {
 
 export function buildUserProfileMessage(input: UserProfileMessageInput) {
   return {
-    text: `Профиль пользователя:\nID: ${input.maxUserId}\nФИО: ${input.fullName}\nОрганизация: ${
-      input.organizationName || "-"
-    }\nОсталось пакетов: ${input.remainingPackages}\nСвязь с админом @HelpMetr\nСвязь с админом +79370332222`,
-    attachments: buildTopupBalanceKeyboard()
+    text: profileMessage(input),
+    attachments: buildTopupBalanceKeyboard(),
+    format: "html" as const
   };
 }

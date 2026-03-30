@@ -1,12 +1,21 @@
-﻿export function miniappOpenMessage(fullName: string) {
+export function miniappOpenMessage(fullName: string) {
   return `Здравствуйте, ${fullName}. Откройте мини-приложение для передачи показаний.`;
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function unknownUserMessage(maxUserId: string) {
-  return `Вас нет в базе.
-[Свяжитесь с поддержкой в Max](max://user/91634403)
-Или по телефону +7(937)-033-22-22
-Ваш MaxID: ${maxUserId}`;
+  return `Вас нет в базе.<br>
+Свяжитесь с : <a href="max://user/91634403">поддержкой в Max</a><br>
+Или по телефону +7(937)-033-22-22<br>
+Ваш MaxID: ${escapeHtml(maxUserId)}`;
 }
 
 export function knownUserUnexpectedMessage(maxUserId: string, remainingPackages: string) {

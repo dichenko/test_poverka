@@ -353,7 +353,7 @@ async function sendProfileMessage(userId: bigint, fallbackUserIdText?: string) {
       await maxBotClient.sendMessage({
         userId: fallbackUserIdText,
         text: unknownUserMessage(fallbackUserIdText),
-        format: "markdown"
+        format: "html"
       });
     }
     return null;
@@ -571,7 +571,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: unknownUserMessage(event.userId),
-        format: "markdown"
+        format: "html"
       });
       return res.json({ ok: true });
     }
@@ -581,7 +581,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: unknownUserMessage(event.userId),
-        format: "markdown"
+        format: "html"
       });
       return res.json({ ok: true });
     }

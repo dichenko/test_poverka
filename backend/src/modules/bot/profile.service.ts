@@ -12,13 +12,9 @@ function legacyRublesToKopecks(value: number | null | undefined): bigint {
 function resolveTariffKopecks(input: {
   organizationTariffKopecks: bigint;
   organizationTariffLegacy: number | null;
-  userTariffLegacy: number | null;
 }): bigint {
   if (input.organizationTariffKopecks > 0n) {
     return input.organizationTariffKopecks;
-  }
-  if (input.userTariffLegacy != null && Number.isFinite(input.userTariffLegacy) && input.userTariffLegacy > 0) {
-    return legacyRublesToKopecks(input.userTariffLegacy);
   }
   if (
     input.organizationTariffLegacy != null &&
@@ -67,8 +63,7 @@ export async function getUserProfilePayload(userId: bigint): Promise<UserProfile
   const organizationBalanceKopecks = user.organization?.balanceKopecks ?? legacyRublesToKopecks(user.organization?.balance);
   const tariffKopecks = resolveTariffKopecks({
     organizationTariffKopecks: user.organization?.tariffPerPackageKopecks ?? 0n,
-    organizationTariffLegacy: user.organization?.userTarif ?? null,
-    userTariffLegacy: user.userTarif ?? null
+    organizationTariffLegacy: user.organization?.userTarif ?? null
   });
 
   const remainingPackages = formatRemainingPackages(organizationBalanceKopecks, tariffKopecks);

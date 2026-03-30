@@ -367,6 +367,57 @@ describe("topups.service", () => {
     expect(result.topup.amountKopecks).toBe(300n);
   });
 
+  it("uses organization tariff and ignores user legacy tariff when creating topup", async () => {
+    const { service, mockPrisma, mockYookassaClient } = await loadService();
+
+    mockPrisma.organizationTopup.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: 101n,
+      organizationId: 77n,
+      phone: "+79000000000",
+      orgEmail: null,
+      userTarif: 9999,
+      organization: {
+        id: 77n,
+        email: "org@example.com",
+        tariffPerPackageKopecks: 200n,
+        userTarif: 1,
+        balanceKopecks: 1000n,
+        balance: null
+      }
+    });
+
+    mockPrisma.organizationTopup.create.mockResolvedValue(
+      makeTopup({
+        id: "9b44b985-7398-4533-9e99-2d979f6a4f66",
+        packagesCount: 2,
+        tariffPerPackageKopecks: 200n,
+        amountKopecks: 400n,
+        providerPaymentId: null,
+        providerConfirmationUrl: null
+      })
+    );
+    mockYookassaClient.createPayment.mockResolvedValue({
+      id: "pay_org_tariff",
+      status: "pending",
+      confirmation: {
+        confirmation_url: "https://pay.example/pay_org_tariff"
+      }
+    });
+    mockPrisma.organizationTopup.update.mockResolvedValue(makeTopup());
+
+    await service.createOrReuseTopupForUser({ userIdRaw: "101", packagesCount: 2 });
+
+    expect(mockPrisma.organizationTopup.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tariffPerPackageKopecks: 200n,
+          amountKopecks: 400n
+        })
+      })
+    );
+  });
+
   it("throws ACTIVE_TOPUP_PENDING from backend guard", async () => {
     const { service, mockPrisma } = await loadService();
 

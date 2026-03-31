@@ -2,4 +2,4 @@
 set -euo pipefail
 
 cd /opt/test_poverka
-docker compose logs -f --tail=200 db backend miniapp report-worker
+docker compose logs -f --tail=200 db backend miniapp report-worker mail-worker

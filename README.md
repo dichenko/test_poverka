@@ -17,6 +17,7 @@ Production-ready baseline for MAX bot + miniapp + PostgreSQL.
 - `photo-worker` -> background service (no public port)
 - `payment-worker` -> background service (no public port)
 - `report-worker` -> background service + internal HTTP `127.0.0.1:3010`
+- `mail-worker` -> background SMTP delivery service (no public port)
 - `miniapp` -> `127.0.0.1:8080`
 
 ## Important infra decision
@@ -63,7 +64,7 @@ Use `deploy.sh`:
 It runs:
 
 - `git pull`
-- `docker compose up -d --build db pgadmin backend photo-worker payment-worker report-worker miniapp`
+- `docker compose up -d --build db pgadmin backend photo-worker payment-worker report-worker mail-worker miniapp`
 
 ## Logs
 
@@ -74,6 +75,7 @@ It runs:
 docker compose logs -f photo-worker
 docker compose logs -f payment-worker
 docker compose logs -f report-worker
+docker compose logs -f mail-worker
 ```
 
 ## Prisma commands
@@ -140,6 +142,8 @@ Implemented now:
 - Timezone-aware logic via `REPORTS_TZ` (default `Europe/Moscow`)
 - PostgreSQL advisory lock + in-memory guard against parallel runs
 - Metadata tracking in DB table `generated_reports`
+- Daily run marker in DB table `report_runs`
+- Automatic enqueue of mail delivery run (`mail_runs`) only after full successful daily generation
 - File storage per report code directory
 - Public report links without authorization
 - Manual run both via CLI and internal HTTP endpoint
@@ -230,6 +234,76 @@ If `date` is omitted, report-worker uses current date in `REPORTS_TZ`.
   - `Количество пакетов передано`
 - `Поступление за день` is aggregated from successful YooKassa payments (`organization_topups`) by `paid_at`.
 - `Количество пакетов передано` is aggregated from confirmed `meter_submissions` by `confirmed_at` and `organization_id`.
+
+## Mail Worker (SMTP report delivery)
+
+`mail-worker` is a dedicated service for email delivery of already generated report files.
+
+Flow:
+
+1. `report-worker` finishes full daily run successfully.
+2. `report-worker` stores/updates marker in `report_runs`.
+3. `report-worker` enqueues mail run in `mail_runs` (`trigger=auto-after-report`).
+4. `mail-worker` picks queued run, classifies file names by strict patterns, resolves recipients, sends emails, stores statuses in `report_email_deliveries`.
+
+Routing rules:
+
+- Admin reports by file pattern:
+  - `Arshin_YYYY-MM-DD.xlsx`
+  - `Balance_Arshin_YYYY-MM-DD.xlsx`
+  - Sent to all emails from `REPORT_ADMIN_EMAILS`.
+- Organization reports by file pattern:
+  - `Otchet_metrolog_{org_id}_{DD-MM-YYYY}.xlsx`
+  - Sent to organization email from `organizations.org_email` by `org_id`.
+
+Idempotency:
+
+- Unique delivery scope key: `report_date + report_type + file_name + recipient_key`.
+- Re-run without `force`: already `sent` deliveries are skipped.
+- `force=true`: allows resend; each attempt is additionally logged in `report_email_delivery_attempts`.
+
+Retry policy:
+
+- Controlled by `MAIL_MAX_ATTEMPTS` and `MAIL_RETRY_DELAY_MS`.
+- Failed recipient/email resolution does not stop whole run.
+- SMTP errors are stored per-delivery and other deliveries continue.
+
+Required env vars:
+
+```bash
+SMTP_HOST=smtp.timeweb.ru
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=...
+SMTP_PASSWORD=...
+SMTP_FROM=reports@example.com
+REPORT_ADMIN_EMAILS=admin1@example.com,admin2@example.com
+MAIL_MAX_ATTEMPTS=3
+MAIL_RETRY_DELAY_MS=5000
+MAIL_WORKER_POLL_INTERVAL_MS=5000
+REPORTS_BASE_DIR=/app/storage/reports
+MAIL_API_TOKEN=replace_me_mail_api_token
+```
+
+Manual API (token protected):
+
+```bash
+# Run full mail delivery for date
+curl -X POST "http://127.0.0.1:3000/api/reports/mail/run" \
+  -H "Content-Type: application/json" \
+  -H "X-Mail-Api-Token: <MAIL_API_TOKEN>" \
+  -d '{"date":"2026-03-31","force":false}'
+
+# Send one report by file name (all recipients for this file)
+curl -X POST "http://127.0.0.1:3000/api/reports/mail/send-one" \
+  -H "Content-Type: application/json" \
+  -H "X-Mail-Api-Token: <MAIL_API_TOKEN>" \
+  -d '{"date":"2026-03-31","fileName":"Arshin_2026-03-31.xlsx","force":true}'
+
+# Status by date
+curl "http://127.0.0.1:3000/api/reports/mail/status?date=2026-03-31" \
+  -H "X-Mail-Api-Token: <MAIL_API_TOKEN>"
+```
 
 ## YooKassa Topups
 

@@ -68,7 +68,19 @@ const envSchema = z.object({
   REPORTS_TZ: z.string().default("Europe/Moscow"),
   REPORTS_HTTP_PORT: z.coerce.number().int().positive().default(3010),
   REPORTS_LOCK_ID: z.coerce.bigint().default(7342052205n),
-  INTERNAL_API_TOKEN: z.string().min(1).default("change_me_internal_token")
+  INTERNAL_API_TOKEN: z.string().min(1).default("change_me_internal_token"),
+  REPORTS_BASE_DIR: z.string().default(process.env.REPORTS_STORAGE_DIR ?? "/app/storage/reports"),
+  SMTP_HOST: z.string().trim().min(1).default("smtp.timeweb.ru"),
+  SMTP_PORT: z.coerce.number().int().positive().default(465),
+  SMTP_SECURE: z.coerce.boolean().default(true),
+  SMTP_USER: z.string().trim().min(1).default("replace_me"),
+  SMTP_PASSWORD: z.string().min(1).default("replace_me"),
+  SMTP_FROM: z.string().trim().min(1).default("reports@example.com"),
+  REPORT_ADMIN_EMAILS: z.string().default(""),
+  MAIL_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  MAIL_RETRY_DELAY_MS: z.coerce.number().int().positive().default(5000),
+  MAIL_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
+  MAIL_API_TOKEN: z.string().min(1).default(process.env.INTERNAL_API_TOKEN ?? "change_me_mail_api_token")
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

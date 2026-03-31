@@ -92,6 +92,18 @@ services:
       REPORTS_STORAGE_DIR: ${REPORTS_STORAGE_DIR:-/app/storage/reports}
       REPORTS_PUBLIC_BASE_URL: ${REPORTS_PUBLIC_BASE_URL:-http://localhost:3000/public/reports}
       REPORTS_TZ: ${REPORTS_TZ:-Europe/Moscow}
+      REPORTS_BASE_DIR: ${REPORTS_BASE_DIR:-/app/storage/reports}
+      SMTP_HOST: ${SMTP_HOST:-smtp.timeweb.ru}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-replace_me}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-replace_me}
+      SMTP_FROM: ${SMTP_FROM:-reports@example.com}
+      REPORT_ADMIN_EMAILS: ${REPORT_ADMIN_EMAILS:-}
+      MAIL_MAX_ATTEMPTS: ${MAIL_MAX_ATTEMPTS:-3}
+      MAIL_RETRY_DELAY_MS: ${MAIL_RETRY_DELAY_MS:-5000}
+      MAIL_WORKER_POLL_INTERVAL_MS: ${MAIL_WORKER_POLL_INTERVAL_MS:-5000}
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:-change_me_mail_api_token}
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -240,6 +252,38 @@ services:
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-change_me_internal_token}
     ports:
       - "127.0.0.1:${REPORTS_HTTP_PORT:-3010}:${REPORTS_HTTP_PORT:-3010}"
+    volumes:
+      - backend_storage:/app/storage
+
+  mail-worker:
+    build:
+      context: ./backend
+    container_name: poverka-bot-max-mail-worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["node", "dist/mail-worker.js"]
+    environment:
+      TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}
+      REPORTS_STORAGE_DIR: ${REPORTS_STORAGE_DIR:-/app/storage/reports}
+      REPORTS_BASE_DIR: ${REPORTS_BASE_DIR:-/app/storage/reports}
+      REPORTS_TZ: ${REPORTS_TZ:-Europe/Moscow}
+      SMTP_HOST: ${SMTP_HOST:-smtp.timeweb.ru}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-replace_me}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-replace_me}
+      SMTP_FROM: ${SMTP_FROM:-reports@example.com}
+      REPORT_ADMIN_EMAILS: ${REPORT_ADMIN_EMAILS:-}
+      MAIL_MAX_ATTEMPTS: ${MAIL_MAX_ATTEMPTS:-3}
+      MAIL_RETRY_DELAY_MS: ${MAIL_RETRY_DELAY_MS:-5000}
+      MAIL_WORKER_POLL_INTERVAL_MS: ${MAIL_WORKER_POLL_INTERVAL_MS:-5000}
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:-change_me_mail_api_token}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-change_me_internal_token}
     volumes:
       - backend_storage:/app/storage
 

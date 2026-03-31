@@ -15,6 +15,7 @@ import { defaultRateLimit } from "./middlewares/rate-limit";
 import { notFoundHandler, errorHandler } from "./middlewares/error-handler";
 import { adminRoutes } from "./modules/admin/admin.routes";
 import { paymentsRoutes } from "./modules/payments/payments.routes";
+import { reportMailRoutes } from "./modules/report-mail/report-mail.routes";
 
 function getAllowedOrigins() {
   return env.CORS_ORIGINS.split(",")
@@ -63,6 +64,7 @@ export function createApp() {
   app.use("/api", submissionsRoutes);
   app.use("/api", storageRoutes);
   app.use("/api", adminRoutes);
+  app.use("/api", reportMailRoutes);
   app.use(paymentsRoutes);
   app.use(botRoutes);
 

@@ -17,6 +17,11 @@ interface StartHttpServerInput {
   reportsTimeZone: string;
   runner: ReportsRunner;
   logger: ReportLogger;
+  onRunCompleted?: (input: {
+    result: Awaited<ReturnType<ReportsRunner["run"]>>;
+    reportCode?: string;
+    organizationId?: bigint;
+  }) => Promise<void>;
 }
 
 function isAuthorizedRequest(requestToken: string | undefined, expectedToken: string) {
@@ -60,6 +65,18 @@ export function startReportWorkerHttpServer(input: StartHttpServerInput): Server
         organizationId: payload.organizationId,
         trigger: "manual-http"
       });
+
+      if (input.onRunCompleted) {
+        try {
+          await input.onRunCompleted({
+            result,
+            reportCode: payload.reportCode,
+            organizationId: payload.organizationId
+          });
+        } catch (error) {
+          input.logger.error({ err: error }, "onRunCompleted callback failed");
+        }
+      }
 
       if (!result.lockAcquired) {
         return res.status(409).json({

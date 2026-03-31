@@ -15,6 +15,10 @@
 - Bot webhook: inbound MAX updates + outbound message adapter.
 - Audit: centralized business action logging.
 - Storage: provider interface + local provider.
+- Reports pipeline:
+  - `report-worker` generates daily files and writes generation markers.
+  - `mail-worker` sends generated files via SMTP with retries and idempotent delivery status in DB.
+  - Manual protected API for run/send-one/status.
 
 ## Security controls
 

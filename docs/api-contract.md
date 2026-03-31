@@ -29,6 +29,12 @@
 - `GET /api/admin/submissions/:id/history`
 - `GET /api/admin/audit-logs`
 
+## Reports Mail (protected by `X-Mail-Api-Token`)
+
+- `POST /api/reports/mail/run` body: `{ date: "YYYY-MM-DD", force?: boolean }`
+- `POST /api/reports/mail/send-one` body: `{ fileName? | filePath? | deliveryId?, date?, force? }`
+- `GET /api/reports/mail/status?date=YYYY-MM-DD&status=&orgId=&fileName=`
+
 ## Storage
 
 - `POST /api/files/upload`

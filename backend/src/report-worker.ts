@@ -7,6 +7,8 @@ import { GeneratedReportsRepository } from "./report-worker/generated-reports.re
 import { startReportWorkerHttpServer } from "./report-worker/http-server";
 import { createReportsRegistry } from "./report-worker/reports-registry";
 import { ReportsRunner } from "./report-worker/reports-runner";
+import { MailRunsRepository } from "./report-mail/mail-runs.repository";
+import { ReportRunsRepository } from "./report-mail/report-runs.repository";
 
 interface CliOptions {
   mode: "worker" | "generate";
@@ -100,7 +102,109 @@ function logRunResult(result: Awaited<ReturnType<ReportsRunner["run"]>>) {
   );
 }
 
-async function runCliGeneration(runner: ReportsRunner, options: CliOptions) {
+function parseIso(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date();
+  }
+  return parsed;
+}
+
+function isRunSuccessful(result: Awaited<ReturnType<ReportsRunner["run"]>>) {
+  if (!result.lockAcquired) {
+    return false;
+  }
+  if (!result.items.length) {
+    return false;
+  }
+  return result.items.every((item) => item.status === "success");
+}
+
+async function handleReportRunCompletion(input: {
+  result: Awaited<ReturnType<ReportsRunner["run"]>>;
+  reportRunsRepository: ReportRunsRepository;
+  mailRunsRepository: MailRunsRepository;
+  autoMailEligible: boolean;
+}) {
+  if (!input.result.lockAcquired) {
+    logger.warn(
+      {
+        reportDate: input.result.date,
+        trigger: input.result.trigger
+      },
+      "Report run completion skipped because lock was not acquired"
+    );
+    return;
+  }
+
+  if (!input.autoMailEligible) {
+    logger.info(
+      {
+        reportDate: input.result.date,
+        trigger: input.result.trigger
+      },
+      "Report run completion marker skipped because run is partial"
+    );
+    return;
+  }
+
+  const successfulReports = input.result.items.filter((item) => item.status === "success").length;
+  const failedItems = input.result.items.filter((item) => item.status === "error");
+  const failedReports = failedItems.length;
+  const status = isRunSuccessful(input.result) ? "SUCCESS" : "FAILED";
+
+  let autoMailRunEnqueued = false;
+
+  if (status === "SUCCESS" && input.autoMailEligible) {
+    try {
+      const openRun = await input.mailRunsRepository.findOpenRunByDate(input.result.date);
+      if (openRun) {
+        autoMailRunEnqueued = true;
+      } else {
+        await input.mailRunsRepository.createRun({
+          reportDate: input.result.date,
+          trigger: "auto-after-report",
+          force: false,
+          requestedBy: "report-worker"
+        });
+        autoMailRunEnqueued = true;
+      }
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          reportDate: input.result.date
+        },
+        "Failed to enqueue automatic mail run"
+      );
+    }
+  }
+
+  await input.reportRunsRepository.upsertByDate({
+    reportDate: input.result.date,
+    trigger: input.result.trigger,
+    status,
+    totalReports: input.result.items.length,
+    successfulReports,
+    failedReports,
+    startedAt: parseIso(input.result.startedAt),
+    finishedAt: parseIso(input.result.finishedAt),
+    errorText:
+      failedItems.length > 0
+        ? failedItems
+            .map((item) => `${item.reportCode}${item.organizationId ? `:${item.organizationId}` : ""}: ${item.errorText}`)
+            .join("\n")
+        : null,
+    autoMailRunEnqueued
+  });
+}
+
+async function runCliGeneration(
+  runner: ReportsRunner,
+  options: CliOptions,
+  reportRunsRepository: ReportRunsRepository,
+  mailRunsRepository: MailRunsRepository
+) {
   const date = resolveReportDate(options.date, reportEnv.REPORTS_TZ);
 
   const result = await runner.run({
@@ -111,6 +215,12 @@ async function runCliGeneration(runner: ReportsRunner, options: CliOptions) {
   });
 
   logRunResult(result);
+  await handleReportRunCompletion({
+    result,
+    reportRunsRepository,
+    mailRunsRepository,
+    autoMailEligible: !options.reportCode && !options.organizationId
+  });
 
   if (!result.lockAcquired) {
     logger.error("Report generation is already running in another process.");
@@ -123,13 +233,25 @@ async function runCliGeneration(runner: ReportsRunner, options: CliOptions) {
   }
 }
 
-async function runWorker(runner: ReportsRunner) {
+async function runWorker(
+  runner: ReportsRunner,
+  reportRunsRepository: ReportRunsRepository,
+  mailRunsRepository: MailRunsRepository
+) {
   const httpServer = startReportWorkerHttpServer({
     port: reportEnv.REPORTS_HTTP_PORT,
     internalApiToken: reportEnv.INTERNAL_API_TOKEN,
     reportsTimeZone: reportEnv.REPORTS_TZ,
     runner,
-    logger
+    logger,
+    onRunCompleted: async ({ result, reportCode, organizationId }) => {
+      await handleReportRunCompletion({
+        result,
+        reportRunsRepository,
+        mailRunsRepository,
+        autoMailEligible: !reportCode && !organizationId
+      });
+    }
   });
 
   const cronJob = CronJob.from({
@@ -144,6 +266,12 @@ async function runWorker(runner: ReportsRunner) {
           trigger: "cron"
         });
         logRunResult(result);
+        await handleReportRunCompletion({
+          result,
+          reportRunsRepository,
+          mailRunsRepository,
+          autoMailEligible: true
+        });
       } catch (error) {
         logger.error({ err: error }, "Cron report run failed");
       }
@@ -199,6 +327,8 @@ async function start() {
     reportsTimeZone: reportEnv.REPORTS_TZ
   });
   const generatedReportsRepository = new GeneratedReportsRepository(prisma);
+  const reportRunsRepository = new ReportRunsRepository(prisma);
+  const mailRunsRepository = new MailRunsRepository(prisma);
   const runner = new ReportsRunner({
     databaseUrl: reportEnv.DATABASE_URL,
     lockId: reportEnv.REPORTS_LOCK_ID,
@@ -210,12 +340,12 @@ async function start() {
   });
 
   if (cli.mode === "generate") {
-    await runCliGeneration(runner, cli);
+    await runCliGeneration(runner, cli, reportRunsRepository, mailRunsRepository);
     await prisma.$disconnect();
     return;
   }
 
-  await runWorker(runner);
+  await runWorker(runner, reportRunsRepository, mailRunsRepository);
 }
 
 start().catch(async (error) => {

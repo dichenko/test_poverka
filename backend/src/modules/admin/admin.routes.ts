@@ -18,7 +18,7 @@ import {
 
 const router = Router();
 
-router.use(requireAuth, requireRole([UserRole.ADMIN]));
+router.use("/admin", requireAuth, requireRole([UserRole.ADMIN]));
 
 function serializeOrganization(org: {
   id: bigint;

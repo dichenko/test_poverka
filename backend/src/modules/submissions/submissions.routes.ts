@@ -21,7 +21,7 @@ import {
 
 const router = Router();
 
-router.use(requireAuth);
+router.use("/submissions", requireAuth);
 
 function reviewKeyboard(submissionId: string) {
   return [

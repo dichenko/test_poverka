@@ -8,7 +8,7 @@ import { getStorageProvider } from "./storage.service";
 const upload = multer({ storage: multer.memoryStorage() });
 const router = Router();
 
-router.use(requireAuth);
+router.use("/files", requireAuth);
 
 router.post("/files/upload", upload.single("file"), async (req, res, next) => {
   try {

@@ -2,7 +2,13 @@ import fs from "fs/promises";
 import { buildReportPaths } from "./report-paths";
 import { ReportExecutionLock } from "./report-execution-lock";
 import type { GeneratedReportsRepository } from "./generated-reports.repository";
-import type { ReportGenerator, ReportLogger, ReportRunItemResult, ReportRunResult } from "./report.types";
+import type {
+  ReportGenerator,
+  ReportLogger,
+  ReportRunItemResult,
+  ReportRunResult,
+  ReportTrigger
+} from "./report.types";
 
 interface ReportsRunnerInput {
   databaseUrl: string;
@@ -16,8 +22,9 @@ interface ReportsRunnerInput {
 
 interface RunReportsInput {
   date: string;
-  trigger: "cron" | "manual-cli" | "manual-http";
+  trigger: ReportTrigger;
   reportCode?: string;
+  organizationId?: bigint;
 }
 
 function normalizeReportCode(value: string) {
@@ -59,6 +66,10 @@ export class ReportsRunner {
   }
 
   async run(input: RunReportsInput): Promise<ReportRunResult> {
+    if (input.organizationId && normalizeReportCode(input.reportCode ?? "") !== "org_metrolog") {
+      throw new Error('organizationId filter can be used only with reportCode "org_metrolog".');
+    }
+
     const startedAt = new Date();
     const reportList = this.resolveReports(input.reportCode);
 
@@ -67,7 +78,8 @@ export class ReportsRunner {
         {
           trigger: input.trigger,
           date: input.date,
-          reportCode: input.reportCode ?? null
+          reportCode: input.reportCode ?? null,
+          organizationId: input.organizationId?.toString() ?? null
         },
         "Report generation is already running in-memory, skipping new start"
       );
@@ -93,7 +105,8 @@ export class ReportsRunner {
           {
             trigger: input.trigger,
             date: input.date,
-            reportCode: input.reportCode ?? null
+            reportCode: input.reportCode ?? null,
+            organizationId: input.organizationId?.toString() ?? null
           },
           "Report generation lock is already acquired by another process"
         );
@@ -109,6 +122,54 @@ export class ReportsRunner {
       }
 
       for (const report of reportList) {
+        if (report.generateBatch) {
+          this.input.logger.info(
+            {
+              reportCode: report.code,
+              reportTitle: report.title,
+              date: input.date,
+              trigger: input.trigger,
+              organizationId: input.organizationId?.toString() ?? null
+            },
+            "Start batch report generation"
+          );
+
+          try {
+            const batchItems = await report.generateBatch({
+              reportDate: input.date,
+              trigger: input.trigger,
+              organizationId: input.organizationId,
+              generatedReportsRepository: this.input.generatedReportsRepository
+            });
+            items.push(...batchItems);
+          } catch (error) {
+            this.input.logger.error(
+              {
+                err: error,
+                reportCode: report.code,
+                date: input.date,
+                organizationId: input.organizationId?.toString() ?? null
+              },
+              "Batch report generation failed"
+            );
+
+            items.push({
+              reportCode: report.code,
+              reportTitle: report.title,
+              status: "error",
+              fileName: "",
+              absolutePath: "",
+              publicUrl: "",
+              rowsCount: 0,
+              errorText: toErrorText(error),
+              organizationId: input.organizationId?.toString() ?? null,
+              organizationName: null
+            });
+          }
+
+          continue;
+        }
+
         const fileName = report.getFileName(input.date);
         const plannedPaths = buildReportPaths({
           storageDir: this.input.reportsStorageDir,
@@ -123,6 +184,7 @@ export class ReportsRunner {
           await this.input.generatedReportsRepository.markPending({
             reportCode: report.code,
             reportDate: input.date,
+            organizationId: null,
             fileName: plannedPaths.fileName,
             filePath: plannedPaths.absolutePath,
             publicUrl: plannedPaths.publicUrl
@@ -144,6 +206,7 @@ export class ReportsRunner {
           await this.input.generatedReportsRepository.markSuccess({
             reportCode: report.code,
             reportDate: input.date,
+            organizationId: null,
             fileName: result.fileName,
             filePath: result.absolutePath,
             publicUrl: result.publicUrl,
@@ -178,6 +241,7 @@ export class ReportsRunner {
             await this.input.generatedReportsRepository.markError({
               reportCode: report.code,
               reportDate: input.date,
+              organizationId: null,
               error
             });
           } else {

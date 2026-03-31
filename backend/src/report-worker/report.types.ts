@@ -1,3 +1,5 @@
+import type { GeneratedReportsRepository } from "./generated-reports.repository";
+
 export interface GeneratedReportResult {
   fileName: string;
   absolutePath: string;
@@ -5,11 +7,21 @@ export interface GeneratedReportResult {
   rowsCount: number;
 }
 
+export type ReportTrigger = "cron" | "manual-cli" | "manual-http";
+
+export interface ReportBatchGenerateInput {
+  reportDate: string;
+  trigger: ReportTrigger;
+  organizationId?: bigint;
+  generatedReportsRepository: GeneratedReportsRepository;
+}
+
 export interface ReportGenerator {
   code: string;
   title: string;
   getFileName(reportDate: string): string;
   generate(reportDate: string): Promise<GeneratedReportResult>;
+  generateBatch?(input: ReportBatchGenerateInput): Promise<ReportRunItemResult[]>;
 }
 
 export interface ReportRunItemResult {
@@ -21,11 +33,13 @@ export interface ReportRunItemResult {
   publicUrl: string;
   rowsCount: number;
   errorText: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
 }
 
 export interface ReportRunResult {
   date: string;
-  trigger: "cron" | "manual-cli" | "manual-http";
+  trigger: ReportTrigger;
   lockAcquired: boolean;
   startedAt: string;
   finishedAt: string;
@@ -37,4 +51,3 @@ export interface ReportLogger {
   warn(payload: unknown, msg?: string): void;
   error(payload: unknown, msg?: string): void;
 }
-

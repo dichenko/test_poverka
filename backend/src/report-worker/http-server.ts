@@ -7,7 +7,8 @@ import type { ReportsRunner } from "./reports-runner";
 
 const runReportBodySchema = z.object({
   reportCode: z.string().trim().min(1).optional(),
-  date: z.string().trim().optional()
+  date: z.string().trim().optional(),
+  organizationId: z.coerce.bigint().positive().optional()
 });
 
 interface StartHttpServerInput {
@@ -56,6 +57,7 @@ export function startReportWorkerHttpServer(input: StartHttpServerInput): Server
       const result = await input.runner.run({
         date,
         reportCode: payload.reportCode,
+        organizationId: payload.organizationId,
         trigger: "manual-http"
       });
 
@@ -84,4 +86,3 @@ export function startReportWorkerHttpServer(input: StartHttpServerInput): Server
     input.logger.info({ port: input.port }, "Report worker HTTP endpoint started");
   });
 }
-

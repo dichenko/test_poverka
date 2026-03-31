@@ -12,6 +12,7 @@ interface CliOptions {
   mode: "worker" | "generate";
   reportCode?: string;
   date?: string;
+  organizationId?: bigint;
 }
 
 function readFlag(args: string[], name: string) {
@@ -37,8 +38,9 @@ function parseCliOptions(rawArgs: string[]): CliOptions {
   const command = args[0];
   const flagReportCode = readFlag(args, "--report");
   const flagDate = readFlag(args, "--date");
+  const flagOrganizationId = readFlag(args, "--organizationId");
 
-  if (command !== "generate-report" && !flagReportCode && !flagDate) {
+  if (command !== "generate-report" && !flagReportCode && !flagDate && !flagOrganizationId) {
     return { mode: "worker" };
   }
 
@@ -55,10 +57,24 @@ function parseCliOptions(rawArgs: string[]): CliOptions {
     positionalDate = positionals[1];
   }
 
+  const organizationIdValue = flagOrganizationId;
+  let organizationId: bigint | undefined;
+  if (organizationIdValue) {
+    try {
+      organizationId = BigInt(organizationIdValue);
+    } catch {
+      throw new Error(`Invalid organizationId value: "${organizationIdValue}". Expected positive integer.`);
+    }
+    if (organizationId <= 0n) {
+      throw new Error(`Invalid organizationId value: "${organizationIdValue}". Expected positive integer.`);
+    }
+  }
+
   return {
     mode: "generate",
     reportCode: flagReportCode ?? positionalReportCode,
-    date: flagDate ?? positionalDate
+    date: flagDate ?? positionalDate,
+    organizationId
   };
 }
 
@@ -72,6 +88,8 @@ function logRunResult(result: Awaited<ReturnType<ReportsRunner["run"]>>) {
       finishedAt: result.finishedAt,
       reports: result.items.map((item) => ({
         reportCode: item.reportCode,
+        organizationId: item.organizationId ?? null,
+        organizationName: item.organizationName ?? null,
         status: item.status,
         rowsCount: item.rowsCount,
         filePath: item.absolutePath,
@@ -88,6 +106,7 @@ async function runCliGeneration(runner: ReportsRunner, options: CliOptions) {
   const result = await runner.run({
     date,
     reportCode: options.reportCode,
+    organizationId: options.organizationId,
     trigger: "manual-cli"
   });
 

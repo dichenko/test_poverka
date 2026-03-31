@@ -14,36 +14,75 @@ function toErrorText(value: unknown) {
 export class GeneratedReportsRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
+  private buildScopeWhere(input: {
+    reportCode: string;
+    reportDate: Date;
+    organizationId?: bigint | null;
+  }) {
+    return {
+      reportCode: input.reportCode,
+      reportDate: input.reportDate,
+      organizationId: input.organizationId ?? null
+    };
+  }
+
+  private async findReportId(input: {
+    reportCode: string;
+    reportDate: Date;
+    organizationId?: bigint | null;
+  }) {
+    const found = await this.prisma.generatedReport.findFirst({
+      where: this.buildScopeWhere(input),
+      select: {
+        id: true
+      }
+    });
+
+    return found?.id ?? null;
+  }
+
   async markPending(input: {
     reportCode: string;
     reportDate: string;
+    organizationId?: bigint | null;
     fileName: string;
     filePath: string;
     publicUrl: string;
   }) {
     const startedAt = new Date();
     const reportDate = toDateOnly(input.reportDate);
+    const organizationId = input.organizationId ?? null;
+    const existingId = await this.findReportId({
+      reportCode: input.reportCode,
+      reportDate,
+      organizationId
+    });
 
-    await this.prisma.generatedReport.upsert({
-      where: {
-        reportCode_reportDate: {
-          reportCode: input.reportCode,
-          reportDate
+    if (existingId) {
+      await this.prisma.generatedReport.update({
+        where: {
+          id: existingId
+        },
+        data: {
+          organizationId,
+          fileName: input.fileName,
+          filePath: input.filePath,
+          publicUrl: input.publicUrl,
+          status: GeneratedReportStatus.PENDING,
+          rowsCount: 0,
+          errorText: null,
+          startedAt,
+          finishedAt: null
         }
-      },
-      create: {
+      });
+      return;
+    }
+
+    await this.prisma.generatedReport.create({
+      data: {
         reportCode: input.reportCode,
         reportDate,
-        fileName: input.fileName,
-        filePath: input.filePath,
-        publicUrl: input.publicUrl,
-        status: GeneratedReportStatus.PENDING,
-        rowsCount: 0,
-        errorText: null,
-        startedAt,
-        finishedAt: null
-      },
-      update: {
+        organizationId,
         fileName: input.fileName,
         filePath: input.filePath,
         publicUrl: input.publicUrl,
@@ -59,6 +98,7 @@ export class GeneratedReportsRepository {
   async markSuccess(input: {
     reportCode: string;
     reportDate: string;
+    organizationId?: bigint | null;
     fileName: string;
     filePath: string;
     publicUrl: string;
@@ -66,15 +106,25 @@ export class GeneratedReportsRepository {
   }) {
     const finishedAt = new Date();
     const reportDate = toDateOnly(input.reportDate);
+    const organizationId = input.organizationId ?? null;
+    const existingId = await this.findReportId({
+      reportCode: input.reportCode,
+      reportDate,
+      organizationId
+    });
+
+    if (!existingId) {
+      throw new Error(
+        `generated_reports row is missing for markSuccess: reportCode=${input.reportCode}, reportDate=${input.reportDate}, organizationId=${organizationId?.toString() ?? "null"}`
+      );
+    }
 
     await this.prisma.generatedReport.update({
       where: {
-        reportCode_reportDate: {
-          reportCode: input.reportCode,
-          reportDate
-        }
+        id: existingId
       },
       data: {
+        organizationId,
         fileName: input.fileName,
         filePath: input.filePath,
         publicUrl: input.publicUrl,
@@ -86,16 +136,30 @@ export class GeneratedReportsRepository {
     });
   }
 
-  async markError(input: { reportCode: string; reportDate: string; error: unknown }) {
+  async markError(input: {
+    reportCode: string;
+    reportDate: string;
+    organizationId?: bigint | null;
+    error: unknown;
+  }) {
     const finishedAt = new Date();
     const reportDate = toDateOnly(input.reportDate);
+    const organizationId = input.organizationId ?? null;
+    const existingId = await this.findReportId({
+      reportCode: input.reportCode,
+      reportDate,
+      organizationId
+    });
+
+    if (!existingId) {
+      throw new Error(
+        `generated_reports row is missing for markError: reportCode=${input.reportCode}, reportDate=${input.reportDate}, organizationId=${organizationId?.toString() ?? "null"}`
+      );
+    }
 
     await this.prisma.generatedReport.update({
       where: {
-        reportCode_reportDate: {
-          reportCode: input.reportCode,
-          reportDate
-        }
+        id: existingId
       },
       data: {
         status: GeneratedReportStatus.ERROR,

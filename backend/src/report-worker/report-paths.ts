@@ -12,6 +12,7 @@ interface BuildReportPathsInput {
   storageDir: string;
   publicBaseUrl: string;
   reportCode: string;
+  pathSegments?: string[];
   fileName: string;
 }
 
@@ -21,7 +22,14 @@ function trimTrailingSlashes(value: string) {
 
 export function buildReportPaths(input: BuildReportPathsInput): ReportPaths {
   const baseDir = path.resolve(input.storageDir);
-  const reportDir = path.resolve(baseDir, input.reportCode);
+  const pathSegments = input.pathSegments ?? [];
+  for (const segment of pathSegments) {
+    if (!segment || segment.includes("/") || segment.includes("\\") || segment === "." || segment === "..") {
+      throw new Error(`Unsafe report path segment: "${segment}"`);
+    }
+  }
+
+  const reportDir = path.resolve(baseDir, input.reportCode, ...pathSegments);
   const absolutePath = path.resolve(reportDir, input.fileName);
   const relative = path.relative(baseDir, absolutePath);
 
@@ -29,9 +37,10 @@ export function buildReportPaths(input: BuildReportPathsInput): ReportPaths {
     throw new Error(`Unsafe report path outside storage root: ${absolutePath}`);
   }
 
-  const publicUrl = `${trimTrailingSlashes(input.publicBaseUrl)}/${encodeURIComponent(input.reportCode)}/${encodeURIComponent(
-    input.fileName
-  )}`;
+  const publicPath = [input.reportCode, ...pathSegments, input.fileName]
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const publicUrl = `${trimTrailingSlashes(input.publicBaseUrl)}/${publicPath}`;
 
   return {
     baseDir,
@@ -41,4 +50,3 @@ export function buildReportPaths(input: BuildReportPathsInput): ReportPaths {
     publicUrl
   };
 }
-

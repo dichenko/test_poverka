@@ -47,6 +47,7 @@ services:
         condition: service_healthy
     environment:
       TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
       PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
       PORT: ${PORT:-3000}
       NODE_ENV: ${NODE_ENV:-production}
@@ -126,6 +127,7 @@ services:
     command: ["node", "dist/photo-worker.js"]
     environment:
       TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
       PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
       PORT: ${PORT:-3000}
       NODE_ENV: ${NODE_ENV:-production}
@@ -182,6 +184,7 @@ services:
     command: ["node", "dist/payment-worker.js"]
     environment:
       TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
       PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
       PORT: ${PORT:-3000}
       NODE_ENV: ${NODE_ENV:-production}
@@ -238,6 +241,7 @@ services:
     command: ["node", "dist/report-worker.js"]
     environment:
       TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
       PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}
@@ -266,6 +270,7 @@ services:
     command: ["node", "dist/mail-worker.js"]
     environment:
       TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
       PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}

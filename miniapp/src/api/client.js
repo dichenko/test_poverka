@@ -13,8 +13,8 @@ export function getBaseUrl() {
 async function parseResponse(response) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = data?.error?.message || data?.message || "Request failed";
-    const code = data?.error?.code || "REQUEST_ERROR";
+    const message = data?.error?.message || data?.error || data?.message || "Request failed";
+    const code = data?.error?.code || data?.error_code || "REQUEST_ERROR";
     const error = new Error(message);
     error.code = code;
     error.details = data?.error?.details;

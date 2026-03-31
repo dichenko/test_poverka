@@ -154,7 +154,7 @@ function formatDateTimeMsk(value) {
   }).format(date);
 }
 
-function UserPanel({ accessToken, canSubmitInitially }) {
+function UserPanel({ accessToken, canSubmitInitially, submissionWindow }) {
   const [form, setForm] = useState({
     address: "",
     phone: "",
@@ -263,6 +263,11 @@ function UserPanel({ accessToken, canSubmitInitially }) {
 
   const equipmentTypeOptions = buildEquipmentTypeOptions(equipmentTypes);
   const isOtherEquipmentTypeSelected = form.equipmentTypeId === OTHER_EQUIPMENT_TYPE_VALUE;
+  const isSubmissionWindowOpen = submissionWindow?.is_open !== false;
+  const submissionWindowMessage =
+    submissionWindow?.message ||
+    "Submission window is closed. Data can be sent only from 00:01 to 21:59 MSK.";
+  const formDisabled = loading || !canSubmitInitially || Boolean(activeTopupMessage) || !isSubmissionWindowOpen;
 
   return (
     <div>
@@ -272,6 +277,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
           Недостаточно средств на балансе организации. Отправка не выполнена. Пополните баланс и попробуйте снова.
         </div>
       ) : null}
+      {!isSubmissionWindowOpen ? <div className="alert error">{submissionWindowMessage}</div> : null}
       {activeTopupMessage ? <div className="alert error">{activeTopupMessage}</div> : null}
       <form onSubmit={submitDraft}>
         <div className="field">
@@ -279,6 +285,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
           <input
             id="address"
             value={form.address}
+            disabled={formDisabled}
             onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))}
             placeholder="Например: ул. Ленина, д. 10, кв. 15"
           />
@@ -292,6 +299,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
               inputMode="numeric"
               maxLength={10}
               value={form.phone}
+              disabled={formDisabled}
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, phone: event.target.value.replace(/\D/g, "").slice(0, 10) }))
               }
@@ -305,6 +313,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
             <select
               id="waterType"
               value={form.waterType}
+              disabled={formDisabled}
               onChange={(event) => setForm((prev) => ({ ...prev, waterType: event.target.value }))}
             >
               <option value="HVS">ХВС</option>
@@ -316,6 +325,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
             <select
               id="equipmentTypeId"
               value={form.equipmentTypeId}
+              disabled={formDisabled}
               onChange={(event) =>
                 setForm((prev) => ({
                   ...prev,
@@ -340,6 +350,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
             <input
               id="customEquipmentTypeName"
               value={form.customEquipmentTypeName}
+              disabled={formDisabled}
               onChange={(event) => setForm((prev) => ({ ...prev, customEquipmentTypeName: event.target.value }))}
               placeholder="Введите тип счетчика"
             />
@@ -351,6 +362,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
             <input
               id="factoryNumber"
               value={form.factoryNumber}
+              disabled={formDisabled}
               onChange={(event) => setForm((prev) => ({ ...prev, factoryNumber: event.target.value }))}
               placeholder="Например A123B45"
             />
@@ -361,6 +373,7 @@ function UserPanel({ accessToken, canSubmitInitially }) {
               id="productionYear"
               inputMode="numeric"
               value={form.productionYear}
+              disabled={formDisabled}
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, productionYear: event.target.value.replace(/\D/g, "").slice(0, 4) }))
               }
@@ -376,12 +389,13 @@ function UserPanel({ accessToken, canSubmitInitially }) {
               min="0"
               step="0.001"
               value={form.reading}
+              disabled={formDisabled}
               onChange={(event) => setForm((prev) => ({ ...prev, reading: event.target.value }))}
               placeholder="Например 88.5"
             />
           </div>
         </div>
-        <button className="button" type="submit" disabled={loading || !canSubmitInitially || Boolean(activeTopupMessage)}>
+        <button className="button" type="submit" disabled={formDisabled}>
           {loading ? "Сохранение..." : "Создать заявку"}
         </button>
       </form>
@@ -668,7 +682,7 @@ function AdminPanel({ accessToken }) {
 }
 
 export default function App() {
-  const { loading, accessToken, user, maxUserId, error, errorCode } = useAuth();
+  const { loading, accessToken, user, maxUserId, submissionWindow, error, errorCode } = useAuth();
   const packagesCount = formatRemainingPackages(user?.organizationBalance, user?.organizationTarif);
   const canSubmitInitially = hasEnoughBalance(user?.organizationBalance, user?.organizationTarif);
 
@@ -714,7 +728,11 @@ export default function App() {
         {user.role === "ADMIN" ? (
           <AdminPanel accessToken={accessToken} />
         ) : (
-          <UserPanel accessToken={accessToken} canSubmitInitially={canSubmitInitially} />
+          <UserPanel
+            accessToken={accessToken}
+            canSubmitInitially={canSubmitInitially}
+            submissionWindow={submissionWindow}
+          />
         )}
       </div>
     </div>

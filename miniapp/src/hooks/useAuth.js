@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchMe, handshakeWithMax } from "../api/auth";
+import { fetchMiniappAccess, handshakeWithMax } from "../api/auth";
 import { getInitData, getMaxUserId, getMaxUserIdFromInitData, readyWebApp } from "../lib/maxWebApp";
 
 export function useAuth() {
@@ -7,6 +7,7 @@ export function useAuth() {
   const [accessToken, setAccessToken] = useState("");
   const [user, setUser] = useState(null);
   const [maxUserId, setMaxUserId] = useState("");
+  const [submissionWindow, setSubmissionWindow] = useState(null);
   const [error, setError] = useState("");
   const [errorCode, setErrorCode] = useState("");
 
@@ -31,11 +32,12 @@ export function useAuth() {
         }
         setAccessToken(auth.accessToken);
 
-        const me = await fetchMe(auth.accessToken);
+        const me = await fetchMiniappAccess(auth.accessToken);
         if (!mounted) {
           return;
         }
-        setUser(me.user);
+        setUser(me.employee);
+        setSubmissionWindow(me.submission_window || null);
       } catch (err) {
         if (!mounted) {
           return;
@@ -60,6 +62,7 @@ export function useAuth() {
     accessToken,
     user,
     maxUserId,
+    submissionWindow,
     error,
     errorCode
   };

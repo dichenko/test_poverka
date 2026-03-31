@@ -2,7 +2,7 @@ import { apiFetch } from "./client";
 
 export function createDraftSubmission(payload, accessToken) {
   return apiFetch(
-    "/api/submissions/draft",
+    "/api/miniapp/submit",
     {
       method: "POST",
       body: JSON.stringify(payload)

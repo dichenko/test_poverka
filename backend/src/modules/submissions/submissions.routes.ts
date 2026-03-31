@@ -1,8 +1,12 @@
-﻿import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
+import { Router } from "express";
 import { AppError } from "../../common/app-error";
+import { prisma } from "../../common/prisma";
 import { validate } from "../../common/validate";
 import { requireAuth } from "../../middlewares/auth";
+import { requireSubmissionWindow } from "../../middlewares/require-submission-window";
 import { logAuditEvent } from "../../services/audit.service";
+import { getSubmissionWindowStatus } from "../../services/submission-window.service";
 import { maxBotClient } from "../bot/max-bot.client";
 import { submissionReviewMessage } from "../bot/bot.templates";
 import { assertNoActiveTopupForUser } from "../payments/topups.service";
@@ -54,51 +58,7 @@ function resolveEquipmentTypeName(input: {
   return input.equipmentType?.name ?? input.customEquipmentTypeName ?? null;
 }
 
-router.get("/submissions/equipment-types", async (_req, res, next) => {
-  try {
-    await assertNoActiveTopupForUser(_req.auth!.userId);
-    const equipmentTypes = await listEquipmentTypes();
-    return res.json({
-      ok: true,
-      equipmentTypes: equipmentTypes.map((item) => ({
-        id: item.id,
-        name: item.name
-      }))
-    });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.get("/submissions/pending/latest", async (req, res, next) => {
-  try {
-    await assertNoActiveTopupForUser(req.auth!.userId);
-    const submission = await getLatestPendingSubmission(req.auth!.userId);
-    return res.json({
-      ok: true,
-      submission: submission
-        ? {
-            id: submission.id,
-            address: submission.address,
-            phone: submission.phone,
-            waterType: submission.waterType,
-            equipmentTypeId: submission.equipmentTypeId,
-            customEquipmentTypeName: submission.customEquipmentTypeName,
-            equipmentTypeName: resolveEquipmentTypeName(submission),
-            factoryNumber: submission.meterNumber,
-            productionYear: submission.productionYear,
-            reading: submission.currentValue.toString(),
-            status: submission.status,
-            createdAt: submission.createdAt
-          }
-        : null
-    });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (req, res, next) => {
+async function handleCreateDraft(req: Request, res: Response, next: NextFunction) {
   try {
     await assertNoActiveTopupForUser(req.auth!.userId);
     const submission = await createDraftSubmission({
@@ -169,9 +129,94 @@ router.post("/submissions/draft", validate(createDraftSubmissionSchema), async (
   } catch (error) {
     return next(error);
   }
+}
+
+router.get("/submissions/equipment-types", async (req, res, next) => {
+  try {
+    await assertNoActiveTopupForUser(req.auth!.userId);
+    const equipmentTypes = await listEquipmentTypes();
+    return res.json({
+      ok: true,
+      equipmentTypes: equipmentTypes.map((item) => ({
+        id: item.id,
+        name: item.name
+      }))
+    });
+  } catch (error) {
+    return next(error);
+  }
 });
 
-router.post("/submissions/:id/confirm", validate(confirmSubmissionParamsSchema, "params"), async (req, res, next) => {
+router.get("/submissions/pending/latest", async (req, res, next) => {
+  try {
+    await assertNoActiveTopupForUser(req.auth!.userId);
+    const submission = await getLatestPendingSubmission(req.auth!.userId);
+    return res.json({
+      ok: true,
+      submission: submission
+        ? {
+            id: submission.id,
+            address: submission.address,
+            phone: submission.phone,
+            waterType: submission.waterType,
+            equipmentTypeId: submission.equipmentTypeId,
+            customEquipmentTypeName: submission.customEquipmentTypeName,
+            equipmentTypeName: resolveEquipmentTypeName(submission),
+            factoryNumber: submission.meterNumber,
+            productionYear: submission.productionYear,
+            reading: submission.currentValue.toString(),
+            status: submission.status,
+            createdAt: submission.createdAt
+          }
+        : null
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/submissions/draft", requireSubmissionWindow, validate(createDraftSubmissionSchema), handleCreateDraft);
+
+router.post("/miniapp/submit", requireAuth, requireSubmissionWindow, validate(createDraftSubmissionSchema), handleCreateDraft);
+
+router.get("/miniapp/access", requireAuth, async (req, res, next) => {
+  try {
+    const userId = BigInt(req.auth!.userId);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { organization: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        ok: false,
+        error: {
+          code: "USER_NOT_FOUND",
+          message: "User not found."
+        }
+      });
+    }
+
+    return res.json({
+      ok: true,
+      employee: {
+        id: user.id.toString(),
+        maxUserId: user.id.toString(),
+        fullName: user.fullName,
+        role: user.role,
+        organizationId: user.organizationId?.toString() ?? null,
+        organizationName: user.organization?.name ?? null,
+        organizationBalance: user.organization?.balance?.toString() ?? null,
+        organizationTarif: user.organization?.userTarif?.toString() ?? null
+      },
+      submission_window: getSubmissionWindowStatus()
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/submissions/:id/confirm", requireSubmissionWindow, validate(confirmSubmissionParamsSchema, "params"), async (req, res, next) => {
   try {
     await assertNoActiveTopupForUser(req.auth!.userId);
     const params = confirmSubmissionParamsSchema.parse(req.params);

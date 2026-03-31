@@ -14,3 +14,7 @@ export function refreshSession() {
 export function fetchMe(accessToken) {
   return apiFetch("/api/auth/me", {}, accessToken);
 }
+
+export function fetchMiniappAccess(accessToken) {
+  return apiFetch("/api/miniapp/access", {}, accessToken);
+}

@@ -6,6 +6,7 @@ import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
 import { authRateLimit } from "../../middlewares/rate-limit";
 import { logAuditEvent } from "../../services/audit.service";
+import { isSubmissionWindowOpen } from "../../services/submission-window.service";
 import {
   createOrReuseTopupForUser,
   getActiveTopupForUser,
@@ -44,6 +45,8 @@ import {
 const router = Router();
 const MAX_LOG_TEXT_LIMIT = 500;
 const TOPUP_CANCEL_CALLBACK_PAYLOAD = "cancel_topup_flow";
+const SUBMISSION_WINDOW_CLOSED_TEXT =
+  "Submission window is closed. Sending and confirming data is allowed only from 00:01 to 21:59 MSK.";
 
 type EventActionKind = "confirm" | "cancel" | "topup" | "topup_cancel" | "none";
 
@@ -138,7 +141,7 @@ function cancelKeyboard(submissionId: string) {
           [
             {
               type: "message",
-              text: "Отменить",
+              text: "РћС‚РјРµРЅРёС‚СЊ",
               payload: `cancel_submission:${submissionId}`
             }
           ]
@@ -157,7 +160,7 @@ function topupPackagesCancelKeyboard() {
           [
             {
               type: "message",
-              text: "Отмена",
+              text: "РћС‚РјРµРЅР°",
               payload: TOPUP_CANCEL_CALLBACK_PAYLOAD
             }
           ]
@@ -260,7 +263,7 @@ function parseActionToken(value: string): { kind: EventActionKind; submissionId:
   const normalized = value.trim();
   const lowered = normalized.toLowerCase();
 
-  if (lowered === "пополнить баланс" || lowered === "topup_balance") {
+  if (lowered === "РїРѕРїРѕР»РЅРёС‚СЊ Р±Р°Р»Р°РЅСЃ" || lowered === "topup_balance") {
     return { kind: "topup", submissionId: "" };
   }
 
@@ -268,11 +271,11 @@ function parseActionToken(value: string): { kind: EventActionKind; submissionId:
     return { kind: "topup_cancel", submissionId: "" };
   }
 
-  if (lowered === "подтвердить" || lowered === "confirm") {
+  if (lowered === "РїРѕРґС‚РІРµСЂРґРёС‚СЊ" || lowered === "confirm") {
     return { kind: "confirm", submissionId: "" };
   }
 
-  if (lowered === "отменить" || lowered === "cancel") {
+  if (lowered === "РѕС‚РјРµРЅРёС‚СЊ" || lowered === "cancel") {
     return { kind: "cancel", submissionId: "" };
   }
 
@@ -399,6 +402,21 @@ async function handleConfirmAction(input: {
   callbackId?: string;
   req: any;
 }) {
+  if (!isSubmissionWindowOpen()) {
+    await maxBotClient.sendMessage({
+      userId: input.userId,
+      text: SUBMISSION_WINDOW_CLOSED_TEXT
+    });
+
+    if (input.callbackId) {
+      await maxBotClient.answerCallback({
+        callbackId: input.callbackId,
+        notification: "Submission window is closed"
+      });
+    }
+    return;
+  }
+
   const submission = await markSubmissionAwaitingPhoto({
     submissionId: input.submissionId,
     userId: input.userId
@@ -421,7 +439,7 @@ async function handleConfirmAction(input: {
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
-      notification: "Прикрепите фотографию счетчика"
+      notification: "РџСЂРёРєСЂРµРїРёС‚Рµ С„РѕС‚РѕРіСЂР°С„РёСЋ СЃС‡РµС‚С‡РёРєР°"
     });
   }
 }
@@ -465,7 +483,7 @@ async function handleCancelAction(input: {
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
-      notification: "Заявка отменена"
+      notification: "Р—Р°СЏРІРєР° РѕС‚РјРµРЅРµРЅР°"
     });
   }
 }
@@ -494,8 +512,8 @@ async function handleStartCommand(input: { userId: string; numericUserId: bigint
 
   const prefix =
     cancelled.cancelledCount > 0
-      ? `Команда /start выполнена. Отменено незавершенных заявок: ${cancelled.cancelledCount}.`
-      : "Команда /start выполнена. Незавершенных заявок не найдено.";
+      ? `РљРѕРјР°РЅРґР° /start РІС‹РїРѕР»РЅРµРЅР°. РћС‚РјРµРЅРµРЅРѕ РЅРµР·Р°РІРµСЂС€РµРЅРЅС‹С… Р·Р°СЏРІРѕРє: ${cancelled.cancelledCount}.`
+      : "РљРѕРјР°РЅРґР° /start РІС‹РїРѕР»РЅРµРЅР°. РќРµР·Р°РІРµСЂС€РµРЅРЅС‹С… Р·Р°СЏРІРѕРє РЅРµ РЅР°Р№РґРµРЅРѕ.";
 
   await maxBotClient.sendMessage({
     userId: input.userId,
@@ -517,7 +535,7 @@ async function handleTopupAction(input: { userId: string; numericUserId: bigint;
     if (input.callbackId) {
       await maxBotClient.answerCallback({
         callbackId: input.callbackId,
-        notification: "Есть активное пополнение"
+        notification: "Р•СЃС‚СЊ Р°РєС‚РёРІРЅРѕРµ РїРѕРїРѕР»РЅРµРЅРёРµ"
       });
     }
     return;
@@ -526,14 +544,14 @@ async function handleTopupAction(input: { userId: string; numericUserId: bigint;
   await setBotUserState(input.numericUserId, BOT_STATE_AWAITING_TOPUP_PACKAGES);
   await maxBotClient.sendMessage({
     userId: input.userId,
-    text: "Сколько пакетов хотите купить?",
+    text: "РЎРєРѕР»СЊРєРѕ РїР°РєРµС‚РѕРІ С…РѕС‚РёС‚Рµ РєСѓРїРёС‚СЊ?",
     attachments: topupPackagesCancelKeyboard()
   });
 
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
-      notification: "Введите количество пакетов"
+      notification: "Р’РІРµРґРёС‚Рµ РєРѕР»РёС‡РµСЃС‚РІРѕ РїР°РєРµС‚РѕРІ"
     });
   }
 }
@@ -550,7 +568,7 @@ async function handleTopupCancelAction(input: { userId: string; numericUserId: b
     if (input.callbackId) {
       await maxBotClient.answerCallback({
         callbackId: input.callbackId,
-        notification: "Есть активное пополнение"
+        notification: "Р•СЃС‚СЊ Р°РєС‚РёРІРЅРѕРµ РїРѕРїРѕР»РЅРµРЅРёРµ"
       });
     }
     return;
@@ -561,14 +579,14 @@ async function handleTopupCancelAction(input: { userId: string; numericUserId: b
     await clearBotUserState(input.numericUserId);
     await maxBotClient.sendMessage({
       userId: input.userId,
-      text: "Сценарий пополнения отменен."
+      text: "РЎС†РµРЅР°СЂРёР№ РїРѕРїРѕР»РЅРµРЅРёСЏ РѕС‚РјРµРЅРµРЅ."
     });
     await sendProfileMessage(input.numericUserId, input.userId);
 
     if (input.callbackId) {
       await maxBotClient.answerCallback({
         callbackId: input.callbackId,
-        notification: "Пополнение отменено"
+        notification: "РџРѕРїРѕР»РЅРµРЅРёРµ РѕС‚РјРµРЅРµРЅРѕ"
       });
     }
     return;
@@ -577,7 +595,7 @@ async function handleTopupCancelAction(input: { userId: string; numericUserId: b
   if (input.callbackId) {
     await maxBotClient.answerCallback({
       callbackId: input.callbackId,
-      notification: "Сценарий уже завершен"
+      notification: "РЎС†РµРЅР°СЂРёР№ СѓР¶Рµ Р·Р°РІРµСЂС€РµРЅ"
     });
   }
 }
@@ -587,7 +605,7 @@ async function handleTopupPackagesInput(input: { userId: string; numericUserId: 
   if (packagesCount == null) {
     await maxBotClient.sendMessage({
       userId: input.userId,
-      text: `Введите целое число пакетов от ${env.PAYMENT_MIN_PACKAGES_PER_TOPUP} до ${env.PAYMENT_MAX_PACKAGES_PER_TOPUP}.`
+      text: `Р’РІРµРґРёС‚Рµ С†РµР»РѕРµ С‡РёСЃР»Рѕ РїР°РєРµС‚РѕРІ РѕС‚ ${env.PAYMENT_MIN_PACKAGES_PER_TOPUP} РґРѕ ${env.PAYMENT_MAX_PACKAGES_PER_TOPUP}.`
     });
     return;
   }
@@ -662,7 +680,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       const action = resolveActionFromEvent(event, req.body);
       const loweredText = event.text.trim().toLowerCase();
 
-      if (action.kind === "topup_cancel" || loweredText === "отмена") {
+      if (action.kind === "topup_cancel" || loweredText === "РѕС‚РјРµРЅР°") {
         await handleTopupCancelAction({
           userId: event.userId,
           numericUserId,
@@ -690,7 +708,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         if (event.callbackId) {
           await maxBotClient.answerCallback({
             callbackId: event.callbackId,
-            notification: "Есть активное пополнение"
+            notification: "Р•СЃС‚СЊ Р°РєС‚РёРІРЅРѕРµ РїРѕРїРѕР»РЅРµРЅРёРµ"
           });
         }
 
@@ -730,7 +748,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         if (event.callbackId) {
           await maxBotClient.answerCallback({
             callbackId: event.callbackId,
-            notification: "Нет заявок для действия"
+            notification: "РќРµС‚ Р·Р°СЏРІРѕРє РґР»СЏ РґРµР№СЃС‚РІРёСЏ"
           });
         }
 
@@ -740,7 +758,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       if (event.callbackId) {
         await maxBotClient.answerCallback({
           callbackId: event.callbackId,
-          notification: "Неизвестное действие"
+          notification: "РќРµРёР·РІРµСЃС‚РЅРѕРµ РґРµР№СЃС‚РІРёРµ"
         });
       }
 
@@ -763,7 +781,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
     if (userState?.state === BOT_STATE_AWAITING_TOPUP_PACKAGES) {
       const awaitingTopupAction = resolveActionFromEvent(event, req.body);
       const loweredText = event.text.trim().toLowerCase();
-      if (awaitingTopupAction.kind === "topup_cancel" || loweredText === "отмена") {
+      if (awaitingTopupAction.kind === "topup_cancel" || loweredText === "РѕС‚РјРµРЅР°") {
         await handleTopupCancelAction({
           userId: event.userId,
           numericUserId
@@ -850,6 +868,14 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
 
     const awaiting = await getAwaitingPhotoSubmission(event.userId);
     if (awaiting) {
+      if (!isSubmissionWindowOpen()) {
+        await maxBotClient.sendMessage({
+          userId: event.userId,
+          text: SUBMISSION_WINDOW_CLOSED_TEXT
+        });
+        return res.json({ ok: true, handled: "SUBMISSION_WINDOW_CLOSED" });
+      }
+
       let attachments = collectAttachments(req.body);
       let photoUrl = pickImageUrl(attachments);
 

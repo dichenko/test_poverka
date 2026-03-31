@@ -19,8 +19,6 @@ const HEADERS = [
   "Количество пакетов передано"
 ] as const;
 
-const COLUMN_WIDTHS = [44, 22, 22, 24, 18, 22, 28] as const;
-
 interface PackagesTransferredRawRow {
   organizationId: string | number | bigint;
   packagesTransferredCount: string | number | bigint;
@@ -173,21 +171,7 @@ export function createBalanceArshinReportGenerator(
 
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(SHEET_TITLE);
-
-      worksheet.columns = HEADERS.map((header, index) => ({
-        header,
-        key: `c${index + 1}`,
-        width: COLUMN_WIDTHS[index]
-      }));
-      worksheet.views = [{ state: "frozen", ySplit: 1 }];
-      worksheet.autoFilter = {
-        from: { row: 1, column: 1 },
-        to: { row: 1, column: HEADERS.length }
-      };
-
-      const headerRow = worksheet.getRow(1);
-      headerRow.font = { bold: true };
-      headerRow.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+      worksheet.addRow([...HEADERS]);
 
       for (const organization of organizations) {
         const orgId = organization.id.toString();
@@ -215,30 +199,16 @@ export function createBalanceArshinReportGenerator(
           );
         }
 
-        worksheet.addRow({
-          c1: orgName,
-          c2: toNumberOrZero(balanceStartOfDay),
-          c3: toNumberOrZero(balanceEndOfDay),
-          c4: packagesCount,
-          c5: toNumberOrZero(packagePrice),
-          c6: toNumberOrZero(income),
-          c7: toNumberOrZero(packagesTransferred)
-        });
+        worksheet.addRow([
+          orgName,
+          toNumberOrZero(balanceStartOfDay),
+          toNumberOrZero(balanceEndOfDay),
+          packagesCount,
+          toNumberOrZero(packagePrice),
+          toNumberOrZero(income),
+          toNumberOrZero(packagesTransferred)
+        ]);
       }
-
-      worksheet.getColumn(2).numFmt = "#,##0.00";
-      worksheet.getColumn(3).numFmt = "#,##0.00";
-      worksheet.getColumn(4).numFmt = "0.########";
-      worksheet.getColumn(5).numFmt = "#,##0.00";
-      worksheet.getColumn(6).numFmt = "#,##0.00";
-      worksheet.getColumn(7).numFmt = "0";
-
-      worksheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) {
-          return;
-        }
-        row.alignment = { vertical: "middle", horizontal: "left" };
-      });
 
       const tempPath = `${paths.absolutePath}.tmp`;
 

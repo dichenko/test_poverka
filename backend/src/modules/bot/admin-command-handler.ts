@@ -149,8 +149,8 @@ async function addBalance(input: {
 }) {
   const sourceId = `max_admin_add:${input.adminUserId.toString()}:${Date.now()}`;
   const result = await prisma.$transaction(async (tx) => {
-    const organizations = await tx.$queryRaw<Array<{ org_id: bigint; balance: bigint }>>`
-      SELECT org_id, balance FROM organizations WHERE org_id = ${input.orgId} FOR UPDATE
+    const organizations = await tx.$queryRaw<Array<{ org_id: bigint; balance: bigint; org_name: string }>>`
+      SELECT org_id, balance, org_name FROM organizations WHERE org_id = ${input.orgId} FOR UPDATE
     `;
     const organization = organizations[0];
     if (!organization) {
@@ -179,7 +179,7 @@ async function addBalance(input: {
       }
     });
 
-    return { ok: true as const, balanceAfter };
+    return { ok: true as const, balanceAfter, organizationName: organization.org_name };
   });
 
   if (!result.ok) {
@@ -205,7 +205,7 @@ async function addBalance(input: {
 
   await maxBotClient.sendMessage({
     userId: input.userIdText,
-    text: `Баланс организации ${input.orgId.toString()} увеличен на ${input.amount.toString()}.\nНовый баланс: ${result.balanceAfter.toString()}.`
+    text: `Баланс организации ${input.orgId.toString()} (${result.organizationName}) увеличен на ${input.amount.toString()}.\nНовый баланс: ${result.balanceAfter.toString()}.`
   });
 
   await writeAdminActionLog({
@@ -232,8 +232,8 @@ async function withdrawBalance(input: {
 }) {
   const sourceId = `max_admin_withdraw:${input.adminUserId.toString()}:${Date.now()}`;
   const result = await prisma.$transaction(async (tx) => {
-    const organizations = await tx.$queryRaw<Array<{ org_id: bigint; balance: bigint }>>`
-      SELECT org_id, balance FROM organizations WHERE org_id = ${input.orgId} FOR UPDATE
+    const organizations = await tx.$queryRaw<Array<{ org_id: bigint; balance: bigint; org_name: string }>>`
+      SELECT org_id, balance, org_name FROM organizations WHERE org_id = ${input.orgId} FOR UPDATE
     `;
     const organization = organizations[0];
     if (!organization) {
@@ -270,7 +270,7 @@ async function withdrawBalance(input: {
       }
     });
 
-    return { ok: true as const, balanceAfter };
+    return { ok: true as const, balanceAfter, organizationName: organization.org_name };
   });
 
   if (!result.ok && result.reason === "ORG_NOT_FOUND") {
@@ -318,7 +318,7 @@ async function withdrawBalance(input: {
 
   await maxBotClient.sendMessage({
     userId: input.userIdText,
-    text: `С баланса организации ${input.orgId.toString()} списано ${input.amount.toString()}.\nНовый баланс: ${result.balanceAfter.toString()}.`
+    text: `С баланса организации ${input.orgId.toString()} (${result.organizationName}) списано ${input.amount.toString()}.\nНовый баланс: ${result.balanceAfter.toString()}.`
   });
 
   await writeAdminActionLog({

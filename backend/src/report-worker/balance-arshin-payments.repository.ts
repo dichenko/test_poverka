@@ -3,13 +3,13 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 interface SucceededIncomeRawRow {
   organizationId: string | number | bigint;
   incomeRubles: string | number | bigint | null;
-  paymentsCount: string | number | bigint;
+  operationsCount: string | number | bigint;
 }
 
 export interface SucceededIncomeByOrganization {
   organizationId: bigint;
   incomeRubles: bigint;
-  paymentsCount: bigint;
+  operationsCount: bigint;
 }
 
 interface GetSucceededIncomeByOrganizationInput {
@@ -54,25 +54,29 @@ export class BalanceArshinPaymentsRepository {
   ): Promise<SucceededIncomeByOrganization[]> {
     const rows = await this.prisma.$queryRaw<SucceededIncomeRawRow[]>(Prisma.sql`
       SELECT
-        ot.organization_id AS "organizationId",
-        COALESCE(SUM(ot.amount_rubles), 0)::bigint AS "incomeRubles",
-        COUNT(*)::bigint AS "paymentsCount"
-      FROM organization_topups AS ot
-      WHERE lower(COALESCE(ot.provider, '')) = 'yookassa'
-        AND (
-          lower(COALESCE(ot.status, '')) = 'paid'
-          OR lower(COALESCE(ot.provider_status, '')) = 'succeeded'
-        )
-        AND ot.paid_at IS NOT NULL
-        AND (ot.paid_at AT TIME ZONE ${input.reportsTimeZone}) >= (${input.reportDate}::date + TIME '00:00:00')
-        AND (ot.paid_at AT TIME ZONE ${input.reportsTimeZone}) <= (${input.reportDate}::date + TIME '23:59:59.999')
-      GROUP BY ot.organization_id
+        obt.organization_id AS "organizationId",
+        COALESCE(
+          SUM(
+            CASE
+              WHEN lower(COALESCE(obt.direction, '')) = 'credit' THEN obt.amount_rubles
+              WHEN lower(COALESCE(obt.direction, '')) = 'debit' THEN -obt.amount_rubles
+              ELSE 0
+            END
+          ),
+          0
+        )::bigint AS "incomeRubles",
+        COUNT(*)::bigint AS "operationsCount"
+      FROM organization_balance_transactions AS obt
+      WHERE lower(COALESCE(obt.source_type, '')) IN ('topup', 'admin_add', 'admin_withdraw')
+        AND (obt.created_at AT TIME ZONE ${input.reportsTimeZone}) >= (${input.reportDate}::date + TIME '00:00:00')
+        AND (obt.created_at AT TIME ZONE ${input.reportsTimeZone}) <= (${input.reportDate}::date + TIME '23:59:59.999')
+      GROUP BY obt.organization_id
     `);
 
     return rows.map((row) => ({
       organizationId: toBigIntOrZero(row.organizationId),
       incomeRubles: toBigIntOrZero(row.incomeRubles),
-      paymentsCount: toBigIntOrZero(row.paymentsCount)
+      operationsCount: toBigIntOrZero(row.operationsCount)
     }));
   }
 }

@@ -149,8 +149,8 @@ export function createBalanceArshinReportGenerator(
       const incomeByOrgId = new Map(incomeRows.map((row) => [row.organizationId.toString(), row]));
       const transferredByOrgId = new Map(transferredRows.map((row) => [row.organizationId.toString(), row]));
 
-      const totalPaymentsFound = incomeRows.reduce(
-        (sum, row) => sum + toNumberOrZero(row.paymentsCount),
+      const totalIncomeOperationsFound = incomeRows.reduce(
+        (sum, row) => sum + toNumberOrZero(row.operationsCount),
         0
       );
       const totalPackagesTransferredFound = transferredRows.reduce(
@@ -163,7 +163,7 @@ export function createBalanceArshinReportGenerator(
           reportCode: REPORT_CODE,
           date: reportDate,
           organizationsCount: organizations.length,
-          paymentsFound: totalPaymentsFound,
+          incomeOperationsFound: totalIncomeOperationsFound,
           packagesTransferredFound: totalPackagesTransferredFound
         },
         "Prepared aggregates for balance_arshin report"

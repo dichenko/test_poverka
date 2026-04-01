@@ -1,4 +1,5 @@
 import path from "path";
+import { UserRole } from "@prisma/client";
 import { Router } from "express";
 import { AppError } from "../../common/app-error";
 import { logger } from "../../common/logger";
@@ -32,6 +33,7 @@ import {
   setBotUserState
 } from "./bot-state.service";
 import { maxBotClient } from "./max-bot.client";
+import { handleAdminCommand, isAdminCommandText, sendAdminAccessDenied } from "./admin-command-handler";
 import { getUserProfilePayload } from "./profile.service";
 import {
   insufficientBalanceMessage,
@@ -664,14 +666,42 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       return res.json({ ok: true });
     }
 
-    const profile = await getUserProfilePayload(numericUserId);
-    if (!profile) {
+    const user = await prisma.user.findUnique({
+      where: { id: numericUserId },
+      select: { id: true, role: true }
+    });
+    if (!user) {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: unknownUserMessage(event.userId),
         format: "html"
       });
       return res.json({ ok: true });
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      if (event.type !== "message_created") {
+        if (event.callbackId) {
+          await maxBotClient.answerCallback({
+            callbackId: event.callbackId,
+            notification: "Админ-команды принимаются только текстом. Напиши /start."
+          });
+        }
+        return res.json({ ok: true, skipped: "ADMIN_EVENT_NOT_SUPPORTED" });
+      }
+
+      await handleAdminCommand({
+        adminUserId: user.id,
+        userIdText: event.userId,
+        text: event.text,
+        req
+      });
+      return res.json({ ok: true, handled: "ADMIN_COMMAND" });
+    }
+
+    if (event.type === "message_created" && isAdminCommandText(event.text)) {
+      await sendAdminAccessDenied(event.userId);
+      return res.json({ ok: true, handled: "ADMIN_ACCESS_DENIED" });
     }
 
     const isCallbackEvent = event.type === "message_callback" || Boolean(event.callbackId);
@@ -986,12 +1016,12 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
     const freshProfile = await sendProfileMessage(numericUserId, event.userId);
 
     await logAuditEvent({
-      actorUserId: profile.user.id,
+      actorUserId: user.id,
       action: "bot.unexpected.message.reply.sent",
       entityType: "SYSTEM",
       meta: {
         eventType: event.type,
-        remainingPackages: freshProfile?.remainingPackages ?? profile.remainingPackages
+        remainingPackages: freshProfile?.remainingPackages ?? "0"
       },
       req
     });

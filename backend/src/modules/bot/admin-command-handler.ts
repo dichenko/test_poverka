@@ -1,0 +1,648 @@
+import { AuditEntityType, UserRole } from "@prisma/client";
+import type { Request } from "express";
+import { logger } from "../../common/logger";
+import { prisma } from "../../common/prisma";
+import { env } from "../../config/env";
+import { resolveReportDate } from "../../report-worker/date.utils";
+import { logAuditEvent } from "../../services/audit.service";
+import { maxBotClient } from "./max-bot.client";
+
+const ADMIN_HELP_TEXT = `Вы администратор. Вот список ваших команд:
+
+/add [org_id] [amount] — добавить сумму на баланс организации
+Пример: /add 1 200
+
+/withdraw [org_id] [amount] — снять сумму с баланса организации
+Пример: /withdraw 1 200
+
+/add_admin [max_user_id] — добавить администратора в базу
+Пример: /add_admin 382159692
+
+/report_admin — сформировать и отправить отчет администратору за сегодня по запросу
+
+/report_buh — сформировать и отправить отчет бухгалтеру за сегодня по запросу`;
+
+const ACCESS_DENIED_TEXT = "У тебя нет доступа к этой команде.";
+const UNKNOWN_COMMAND_TEXT = "Неизвестная команда.\nНапиши /start, чтобы посмотреть список команд.";
+
+const ADD_FORMAT_ERROR_TEXT = "Неверный формат команды.\nИспользуй: /add [org_id] [amount]\nПример: /add 1 200";
+const WITHDRAW_FORMAT_ERROR_TEXT =
+  "Неверный формат команды.\nИспользуй: /withdraw [org_id] [amount]\nПример: /withdraw 1 200";
+const ADD_ADMIN_FORMAT_ERROR_TEXT =
+  "Неверный формат команды.\nИспользуй: /add_admin [max_user_id]\nПример: /add_admin 382159692";
+const INVALID_AMOUNT_TEXT = "Сумма должна быть положительным числом.";
+
+type AdminCommand = "/add" | "/withdraw" | "/add_admin" | "/report_admin" | "/report_buh";
+
+function normalizeText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function parseTokens(raw: string) {
+  const normalized = normalizeText(raw);
+  if (!normalized) {
+    return [] as string[];
+  }
+  return normalized.split(" ");
+}
+
+function parsePositiveBigInt(value: string): bigint | null {
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) {
+    return null;
+  }
+
+  try {
+    const parsed = BigInt(normalized);
+    if (parsed <= 0n) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function parsePositiveInt(value: string): bigint | null {
+  return parsePositiveBigInt(value);
+}
+
+function isMenuCommand(value: string) {
+  const normalized = normalizeText(value).toLowerCase();
+  return (
+    normalized === "/start" ||
+    normalized === "start" ||
+    normalized === "меню" ||
+    normalized === "help" ||
+    normalized === "помощь"
+  );
+}
+
+function pickCommandToken(text: string) {
+  const [token] = parseTokens(text);
+  return (token || "").toLowerCase();
+}
+
+const adminCommandTokens = new Set<AdminCommand>(["/add", "/withdraw", "/add_admin", "/report_admin", "/report_buh"]);
+
+export function isAdminCommandText(text: string) {
+  return adminCommandTokens.has(pickCommandToken(text) as AdminCommand);
+}
+
+async function writeAdminActionLog(input: {
+  adminUserId: bigint;
+  command: string;
+  success: boolean;
+  req: Request;
+  meta?: Record<string, unknown>;
+  entityType?: AuditEntityType;
+  entityId?: string | null;
+  errorText?: string;
+}) {
+  const baseMeta = {
+    admin_max_user_id: input.adminUserId.toString(),
+    command: input.command,
+    success: input.success,
+    error: input.errorText ?? null,
+    ...(input.meta ?? {})
+  };
+
+  logger.info(baseMeta, "MAX admin command processed");
+
+  await logAuditEvent({
+    actorUserId: input.adminUserId,
+    action: `bot.admin.${input.command}.${input.success ? "success" : "fail"}`,
+    entityType: input.entityType ?? "SYSTEM",
+    entityId: input.entityId ?? null,
+    meta: baseMeta,
+    req: input.req
+  });
+}
+
+async function sendAdminHelp(userIdText: string) {
+  await maxBotClient.sendMessage({
+    userId: userIdText,
+    text: ADMIN_HELP_TEXT
+  });
+}
+
+async function isFirstAdminMessage(adminUserId: bigint) {
+  const existing = await prisma.auditLog.findFirst({
+    where: {
+      actorUserId: adminUserId,
+      action: {
+        startsWith: "bot.admin."
+      }
+    },
+    select: { id: true }
+  });
+
+  return !existing;
+}
+
+async function addBalance(input: {
+  adminUserId: bigint;
+  userIdText: string;
+  orgId: bigint;
+  amount: bigint;
+  req: Request;
+}) {
+  const sourceId = `max_admin_add:${input.adminUserId.toString()}:${Date.now()}`;
+  const result = await prisma.$transaction(async (tx) => {
+    const organizations = await tx.$queryRaw<Array<{ org_id: bigint; balance: bigint }>>`
+      SELECT org_id, balance FROM organizations WHERE org_id = ${input.orgId} FOR UPDATE
+    `;
+    const organization = organizations[0];
+    if (!organization) {
+      return { ok: false as const };
+    }
+
+    const balanceBefore = BigInt(organization.balance);
+    const balanceAfter = balanceBefore + input.amount;
+
+    await tx.organization.update({
+      where: { id: input.orgId },
+      data: { balance: balanceAfter }
+    });
+
+    await tx.organizationBalanceTransaction.create({
+      data: {
+        organizationId: input.orgId,
+        direction: "credit",
+        amountRubles: input.amount,
+        balanceBeforeRubles: balanceBefore,
+        balanceAfterRubles: balanceAfter,
+        sourceType: "admin_add",
+        sourceId,
+        createdByUserId: input.adminUserId,
+        comment: "MAX admin /add"
+      }
+    });
+
+    return { ok: true as const, balanceAfter };
+  });
+
+  if (!result.ok) {
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: `Организация с id ${input.orgId.toString()} не найдена.`
+    });
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "add",
+      success: false,
+      req: input.req,
+      meta: {
+        org_id: input.orgId.toString(),
+        amount: input.amount.toString()
+      },
+      entityType: "ORGANIZATION",
+      entityId: input.orgId.toString(),
+      errorText: "ORG_NOT_FOUND"
+    });
+    return;
+  }
+
+  await maxBotClient.sendMessage({
+    userId: input.userIdText,
+    text: `Баланс организации ${input.orgId.toString()} увеличен на ${input.amount.toString()}.\nНовый баланс: ${result.balanceAfter.toString()}.`
+  });
+
+  await writeAdminActionLog({
+    adminUserId: input.adminUserId,
+    command: "add",
+    success: true,
+    req: input.req,
+    meta: {
+      org_id: input.orgId.toString(),
+      amount: input.amount.toString(),
+      new_balance: result.balanceAfter.toString()
+    },
+    entityType: "ORGANIZATION",
+    entityId: input.orgId.toString()
+  });
+}
+
+async function withdrawBalance(input: {
+  adminUserId: bigint;
+  userIdText: string;
+  orgId: bigint;
+  amount: bigint;
+  req: Request;
+}) {
+  const sourceId = `max_admin_withdraw:${input.adminUserId.toString()}:${Date.now()}`;
+  const result = await prisma.$transaction(async (tx) => {
+    const organizations = await tx.$queryRaw<Array<{ org_id: bigint; balance: bigint }>>`
+      SELECT org_id, balance FROM organizations WHERE org_id = ${input.orgId} FOR UPDATE
+    `;
+    const organization = organizations[0];
+    if (!organization) {
+      return { ok: false as const, reason: "ORG_NOT_FOUND" as const };
+    }
+
+    const balanceBefore = BigInt(organization.balance);
+    if (balanceBefore < input.amount) {
+      return {
+        ok: false as const,
+        reason: "INSUFFICIENT_BALANCE" as const,
+        currentBalance: balanceBefore
+      };
+    }
+
+    const balanceAfter = balanceBefore - input.amount;
+
+    await tx.organization.update({
+      where: { id: input.orgId },
+      data: { balance: balanceAfter }
+    });
+
+    await tx.organizationBalanceTransaction.create({
+      data: {
+        organizationId: input.orgId,
+        direction: "debit",
+        amountRubles: input.amount,
+        balanceBeforeRubles: balanceBefore,
+        balanceAfterRubles: balanceAfter,
+        sourceType: "admin_withdraw",
+        sourceId,
+        createdByUserId: input.adminUserId,
+        comment: "MAX admin /withdraw"
+      }
+    });
+
+    return { ok: true as const, balanceAfter };
+  });
+
+  if (!result.ok && result.reason === "ORG_NOT_FOUND") {
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: `Организация с id ${input.orgId.toString()} не найдена.`
+    });
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "withdraw",
+      success: false,
+      req: input.req,
+      meta: {
+        org_id: input.orgId.toString(),
+        amount: input.amount.toString()
+      },
+      entityType: "ORGANIZATION",
+      entityId: input.orgId.toString(),
+      errorText: "ORG_NOT_FOUND"
+    });
+    return;
+  }
+
+  if (!result.ok && result.reason === "INSUFFICIENT_BALANCE") {
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: `Недостаточно средств на балансе организации ${input.orgId.toString()}.\nТекущий баланс: ${result.currentBalance.toString()}.`
+    });
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "withdraw",
+      success: false,
+      req: input.req,
+      meta: {
+        org_id: input.orgId.toString(),
+        amount: input.amount.toString(),
+        current_balance: result.currentBalance.toString()
+      },
+      entityType: "ORGANIZATION",
+      entityId: input.orgId.toString(),
+      errorText: "INSUFFICIENT_BALANCE"
+    });
+    return;
+  }
+
+  await maxBotClient.sendMessage({
+    userId: input.userIdText,
+    text: `С баланса организации ${input.orgId.toString()} списано ${input.amount.toString()}.\nНовый баланс: ${result.balanceAfter.toString()}.`
+  });
+
+  await writeAdminActionLog({
+    adminUserId: input.adminUserId,
+    command: "withdraw",
+    success: true,
+    req: input.req,
+    meta: {
+      org_id: input.orgId.toString(),
+      amount: input.amount.toString(),
+      new_balance: result.balanceAfter.toString()
+    },
+    entityType: "ORGANIZATION",
+    entityId: input.orgId.toString()
+  });
+}
+
+async function addAdmin(input: {
+  adminUserId: bigint;
+  userIdText: string;
+  targetMaxUserId: bigint;
+  req: Request;
+}) {
+  const target = await prisma.user.findUnique({
+    where: { id: input.targetMaxUserId },
+    select: { id: true, role: true }
+  });
+
+  if (!target) {
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: `Пользователь с MAX ID ${input.targetMaxUserId.toString()} не найден в базе.`
+    });
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "add_admin",
+      success: false,
+      req: input.req,
+      meta: {
+        target_max_user_id: input.targetMaxUserId.toString()
+      },
+      entityType: "USER",
+      entityId: input.targetMaxUserId.toString(),
+      errorText: "USER_NOT_FOUND"
+    });
+    return;
+  }
+
+  if (target.role !== UserRole.ADMIN) {
+    await prisma.user.update({
+      where: { id: target.id },
+      data: { role: UserRole.ADMIN }
+    });
+  }
+
+  await maxBotClient.sendMessage({
+    userId: input.userIdText,
+    text: `Пользователь с MAX ID ${input.targetMaxUserId.toString()} назначен администратором.`
+  });
+
+  await writeAdminActionLog({
+    adminUserId: input.adminUserId,
+    command: "add_admin",
+    success: true,
+    req: input.req,
+    meta: {
+      target_max_user_id: input.targetMaxUserId.toString()
+    },
+    entityType: "USER",
+    entityId: input.targetMaxUserId.toString()
+  });
+}
+
+async function runReportByCode(reportCode: "arshin" | "balance_arshin") {
+  const endpoint = new URL("/internal/reports/run", env.REPORT_WORKER_INTERNAL_BASE_URL);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Internal-Token": env.INTERNAL_API_TOKEN
+    },
+    body: JSON.stringify({ reportCode })
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as any;
+  const result = payload?.result;
+
+  if (!response.ok || !payload?.ok || !result?.lockAcquired) {
+    throw new Error("REPORT_RUN_FAILED");
+  }
+
+  const reportDate = resolveReportDate(undefined, env.REPORTS_TZ);
+  const generated = await prisma.generatedReport.findFirst({
+    where: {
+      reportCode,
+      reportDate: new Date(`${reportDate}T00:00:00.000Z`),
+      status: "SUCCESS",
+      organizationId: null
+    },
+    orderBy: { finishedAt: "desc" }
+  });
+
+  if (!generated || !generated.publicUrl) {
+    throw new Error("REPORT_FILE_NOT_FOUND");
+  }
+
+  return {
+    reportDate,
+    fileName: generated.fileName,
+    publicUrl: generated.publicUrl
+  };
+}
+
+async function handleAdminReport(input: {
+  adminUserId: bigint;
+  userIdText: string;
+  req: Request;
+  reportCode: "arshin" | "balance_arshin";
+  doneText: string;
+  command: "report_admin" | "report_buh";
+}) {
+  await maxBotClient.sendMessage({
+    userId: input.userIdText,
+    text: "Формирую отчет, подожди..."
+  });
+
+  try {
+    const report = await runReportByCode(input.reportCode);
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: input.doneText
+    });
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: `Файл отчета: ${report.fileName}\n${report.publicUrl}`
+    });
+
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: input.command,
+      success: true,
+      req: input.req,
+      meta: {
+        report_code: input.reportCode,
+        file_name: report.fileName,
+        report_date: report.reportDate,
+        public_url: report.publicUrl
+      }
+    });
+  } catch (error) {
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: "Не удалось сформировать отчет. Попробуй позже."
+    });
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: input.command,
+      success: false,
+      req: input.req,
+      meta: {
+        report_code: input.reportCode
+      },
+      errorText: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+export async function sendAdminAccessDenied(userIdText: string) {
+  await maxBotClient.sendMessage({
+    userId: userIdText,
+    text: ACCESS_DENIED_TEXT
+  });
+}
+
+export async function handleAdminCommand(input: {
+  adminUserId: bigint;
+  userIdText: string;
+  text: string;
+  req: Request;
+}) {
+  const normalizedText = normalizeText(input.text);
+  const firstMessage = await isFirstAdminMessage(input.adminUserId);
+
+  if (firstMessage || isMenuCommand(normalizedText)) {
+    await sendAdminHelp(input.userIdText);
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "help",
+      success: true,
+      req: input.req
+    });
+    return;
+  }
+
+  const [commandToken, arg1, arg2] = parseTokens(normalizedText);
+  const command = commandToken.toLowerCase();
+
+  if (command === "/add") {
+    const orgId = arg1 ? parsePositiveInt(arg1) : null;
+    const amount = arg2 ? parsePositiveBigInt(arg2) : null;
+    if (!orgId || !amount || parseTokens(normalizedText).length !== 3) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: !amount && arg2 ? INVALID_AMOUNT_TEXT : ADD_FORMAT_ERROR_TEXT
+      });
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "add",
+        success: false,
+        req: input.req,
+        meta: {
+          raw_text: normalizedText
+        },
+        errorText: "INVALID_FORMAT"
+      });
+      return;
+    }
+
+    await addBalance({
+      adminUserId: input.adminUserId,
+      userIdText: input.userIdText,
+      orgId,
+      amount,
+      req: input.req
+    });
+    return;
+  }
+
+  if (command === "/withdraw") {
+    const orgId = arg1 ? parsePositiveInt(arg1) : null;
+    const amount = arg2 ? parsePositiveBigInt(arg2) : null;
+    if (!orgId || !amount || parseTokens(normalizedText).length !== 3) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: !amount && arg2 ? INVALID_AMOUNT_TEXT : WITHDRAW_FORMAT_ERROR_TEXT
+      });
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "withdraw",
+        success: false,
+        req: input.req,
+        meta: {
+          raw_text: normalizedText
+        },
+        errorText: "INVALID_FORMAT"
+      });
+      return;
+    }
+
+    await withdrawBalance({
+      adminUserId: input.adminUserId,
+      userIdText: input.userIdText,
+      orgId,
+      amount,
+      req: input.req
+    });
+    return;
+  }
+
+  if (command === "/add_admin") {
+    const targetMaxUserId = arg1 ? parsePositiveBigInt(arg1) : null;
+    if (!targetMaxUserId || parseTokens(normalizedText).length !== 2) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: ADD_ADMIN_FORMAT_ERROR_TEXT
+      });
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "add_admin",
+        success: false,
+        req: input.req,
+        meta: {
+          raw_text: normalizedText
+        },
+        errorText: "INVALID_FORMAT"
+      });
+      return;
+    }
+
+    await addAdmin({
+      adminUserId: input.adminUserId,
+      userIdText: input.userIdText,
+      targetMaxUserId,
+      req: input.req
+    });
+    return;
+  }
+
+  if (command === "/report_admin") {
+    await handleAdminReport({
+      adminUserId: input.adminUserId,
+      userIdText: input.userIdText,
+      req: input.req,
+      reportCode: "arshin",
+      doneText: "Отчет для администратора за сегодня готов.",
+      command: "report_admin"
+    });
+    return;
+  }
+
+  if (command === "/report_buh") {
+    await handleAdminReport({
+      adminUserId: input.adminUserId,
+      userIdText: input.userIdText,
+      req: input.req,
+      reportCode: "balance_arshin",
+      doneText: "Бухгалтерский отчет за сегодня готов.",
+      command: "report_buh"
+    });
+    return;
+  }
+
+  await maxBotClient.sendMessage({
+    userId: input.userIdText,
+    text: UNKNOWN_COMMAND_TEXT
+  });
+  await writeAdminActionLog({
+    adminUserId: input.adminUserId,
+    command: "unknown",
+    success: false,
+    req: input.req,
+    meta: {
+      raw_text: normalizedText
+    },
+    errorText: "UNKNOWN_COMMAND"
+  });
+}

@@ -8,6 +8,10 @@ const defaultYookassaWebhookAllowedIps =
   process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS ?? process.env.YOOKASSA_WEBHOOK_IP_ALLOWLIST ?? "127.0.0.1,::1";
 const defaultTopupTtlSeconds = Number(process.env.TOPUP_LINK_TTL_SECONDS ?? process.env.PAYMENT_INVOICE_TTL_SECONDS ?? 180);
 const defaultYookassaApiBaseUrl = process.env.YOOKASSA_API_BASE_URL ?? "https://api.yookassa.ru/v3";
+const defaultReportWorkerInternalBaseUrl = (() => {
+  const port = process.env.REPORTS_HTTP_PORT ?? "3010";
+  return `http://report-worker:${port}`;
+})();
 const defaultReportsPublicBaseUrl = (() => {
   if (process.env.REPORTS_PUBLIC_BASE_URL) {
     return process.env.REPORTS_PUBLIC_BASE_URL;
@@ -68,6 +72,7 @@ const envSchema = z.object({
   REPORTS_CRON: z.string().default("5 22 * * *"),
   REPORTS_TZ: z.string().default("Europe/Moscow"),
   REPORTS_HTTP_PORT: z.coerce.number().int().positive().default(3010),
+  REPORT_WORKER_INTERNAL_BASE_URL: z.string().url().default(defaultReportWorkerInternalBaseUrl),
   REPORTS_LOCK_ID: z.coerce.bigint().default(7342052205n),
   INTERNAL_API_TOKEN: z.string().min(1).default("change_me_internal_token"),
   REPORTS_BASE_DIR: z.string().default(process.env.REPORTS_STORAGE_DIR ?? "/app/storage/reports"),

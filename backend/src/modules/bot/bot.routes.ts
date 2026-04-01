@@ -518,8 +518,8 @@ async function handleStartCommand(input: { userId: string; numericUserId: bigint
 
   const prefix =
     cancelled.cancelledCount > 0
-      ? `РљРѕРјР°РЅРґР° /start РІС‹РїРѕР»РЅРµРЅР°. РћС‚РјРµРЅРµРЅРѕ РЅРµР·Р°РІРµСЂС€РµРЅРЅС‹С… Р·Р°СЏРІРѕРє: ${cancelled.cancelledCount}.`
-      : "РљРѕРјР°РЅРґР° /start РІС‹РїРѕР»РЅРµРЅР°. РќРµР·Р°РІРµСЂС€РµРЅРЅС‹С… Р·Р°СЏРІРѕРє РЅРµ РЅР°Р№РґРµРЅРѕ.";
+      ? `Команда /start выполнена. Отменено незавершенных заявок: ${cancelled.cancelledCount}.`
+      : "Команда /start выполнена. Незавершенных заявок не найдено.";
 
   await maxBotClient.sendMessage({
     userId: input.userId,

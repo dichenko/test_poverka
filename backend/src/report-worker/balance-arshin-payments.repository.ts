@@ -58,8 +58,8 @@ export class BalanceArshinPaymentsRepository {
         COALESCE(
           SUM(
             CASE
-              WHEN lower(COALESCE(obt.direction, '')) = 'credit' THEN obt.amount_rubles
-              WHEN lower(COALESCE(obt.direction, '')) = 'debit' THEN -obt.amount_rubles
+              WHEN lower(trim(COALESCE(obt.direction, ''))) = 'credit' THEN obt.amount_rubles
+              WHEN lower(trim(COALESCE(obt.direction, ''))) = 'debit' THEN -obt.amount_rubles
               ELSE 0
             END
           ),
@@ -67,9 +67,14 @@ export class BalanceArshinPaymentsRepository {
         )::bigint AS "incomeRubles",
         COUNT(*)::bigint AS "operationsCount"
       FROM organization_balance_transactions AS obt
-      WHERE lower(COALESCE(obt.source_type, '')) IN ('topup', 'admin_add', 'admin_withdraw')
-        AND (obt.created_at AT TIME ZONE ${input.reportsTimeZone}) >= (${input.reportDate}::date + TIME '00:00:00')
-        AND (obt.created_at AT TIME ZONE ${input.reportsTimeZone}) <= (${input.reportDate}::date + TIME '23:59:59.999')
+      WHERE (
+          lower(trim(COALESCE(obt.source_type, ''))) = 'topup'
+          OR lower(trim(COALESCE(obt.source_type, ''))) IN ('admin_add', 'admin_withdraw')
+          OR lower(COALESCE(obt.source_id, '')) LIKE 'max_admin_add:%'
+          OR lower(COALESCE(obt.source_id, '')) LIKE 'max_admin_withdraw:%'
+        )
+        AND (obt.created_at AT TIME ZONE ${input.reportsTimeZone}) >= ${input.reportDate}::date
+        AND (obt.created_at AT TIME ZONE ${input.reportsTimeZone}) < (${input.reportDate}::date + INTERVAL '1 day')
       GROUP BY obt.organization_id
     `);
 

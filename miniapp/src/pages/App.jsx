@@ -681,6 +681,17 @@ function AdminPanel({ accessToken }) {
   );
 }
 
+function AdminInstructionPanel({ instructionText }) {
+  return (
+    <div>
+      <h3>Инструкция администратора</h3>
+      <div className="alert info" style={{ whiteSpace: "pre-line" }}>
+        {instructionText}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { loading, accessToken, user, maxUserId, submissionWindow, error, errorCode } = useAuth();
   const packagesCount = formatRemainingPackages(user?.organizationBalance, user?.organizationTarif);
@@ -726,7 +737,7 @@ export default function App() {
         <p>Пакеты: {packagesCount}</p>
         <p>{user.fullName}</p>
         {user.role === "ADMIN" ? (
-          <AdminPanel accessToken={accessToken} />
+          <AdminInstructionPanel instructionText={user.adminHelpText || "Инструкция недоступна."} />
         ) : (
           <UserPanel
             accessToken={accessToken}

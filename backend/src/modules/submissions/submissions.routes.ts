@@ -7,6 +7,7 @@ import { requireAuth } from "../../middlewares/auth";
 import { requireSubmissionWindow } from "../../middlewares/require-submission-window";
 import { logAuditEvent } from "../../services/audit.service";
 import { getSubmissionWindowStatus } from "../../services/submission-window.service";
+import { MAX_ADMIN_HELP_TEXT } from "../bot/admin-help-text";
 import { maxBotClient } from "../bot/max-bot.client";
 import { submissionReviewMessage } from "../bot/bot.templates";
 import { assertNoActiveTopupForUser } from "../payments/topups.service";
@@ -207,7 +208,8 @@ router.get("/miniapp/access", requireAuth, async (req, res, next) => {
         organizationId: user.organizationId?.toString() ?? null,
         organizationName: user.organization?.name ?? null,
         organizationBalance: user.organization?.balance?.toString() ?? null,
-        organizationTarif: user.organization?.userTarif?.toString() ?? null
+        organizationTarif: user.organization?.userTarif?.toString() ?? null,
+        adminHelpText: user.role === "ADMIN" ? MAX_ADMIN_HELP_TEXT : null
       },
       submission_window: getSubmissionWindowStatus()
     });

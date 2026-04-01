@@ -5,22 +5,8 @@ import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
 import { resolveReportDate } from "../../report-worker/date.utils";
 import { logAuditEvent } from "../../services/audit.service";
+import { MAX_ADMIN_HELP_TEXT } from "./admin-help-text";
 import { maxBotClient } from "./max-bot.client";
-
-const ADMIN_HELP_TEXT = `Вы администратор. Вот список ваших команд:
-
-/add [org_id] [amount] — добавить сумму на баланс организации
-Пример: /add 1 200
-
-/withdraw [org_id] [amount] — снять сумму с баланса организации
-Пример: /withdraw 1 200
-
-/add_admin [max_user_id] — добавить администратора в базу
-Пример: /add_admin 382159692
-
-/report_admin — сформировать и отправить отчет администратору за сегодня по запросу
-
-/report_buh — сформировать и отправить отчет бухгалтеру за сегодня по запросу`;
 
 const ACCESS_DENIED_TEXT = "У тебя нет доступа к этой команде.";
 const UNKNOWN_COMMAND_TEXT = "Неизвестная команда.\nНапиши /start, чтобы посмотреть список команд.";
@@ -122,7 +108,7 @@ async function writeAdminActionLog(input: {
 async function sendAdminHelp(userIdText: string) {
   await maxBotClient.sendMessage({
     userId: userIdText,
-    text: ADMIN_HELP_TEXT
+    text: MAX_ADMIN_HELP_TEXT
   });
 }
 

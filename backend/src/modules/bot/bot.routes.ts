@@ -47,6 +47,10 @@ import {
 const router = Router();
 const MAX_LOG_TEXT_LIMIT = 500;
 const TOPUP_CANCEL_CALLBACK_PAYLOAD = "cancel_topup_flow";
+const RU_TOPUP_BALANCE = "\u043f\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u044c \u0431\u0430\u043b\u0430\u043d\u0441";
+const RU_CONFIRM = "\u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c";
+const RU_CANCEL = "\u043e\u0442\u043c\u0435\u043d\u0438\u0442\u044c";
+const RU_CANCEL_SHORT = "\u043e\u0442\u043c\u0435\u043d\u0430";
 const SUBMISSION_WINDOW_CLOSED_TEXT =
   "Submission window is closed. Sending and confirming data is allowed only from 00:01 to 21:59 MSK.";
 
@@ -262,10 +266,10 @@ function parseActionToken(value: string): { kind: EventActionKind; submissionId:
     return { kind: "none", submissionId: "" };
   }
 
-  const normalized = value.trim();
+  const normalized = value.trim().replace(/\s+/g, " ");
   const lowered = normalized.toLowerCase();
 
-  if (lowered === "РїРѕРїРѕР»РЅРёС‚СЊ Р±Р°Р»Р°РЅСЃ" || lowered === "topup_balance") {
+  if (lowered === "РїРѕРїРѕР»РЅРёС‚СЊ Р±Р°Р»Р°РЅСЃ" || lowered === "topup_balance" || lowered === RU_TOPUP_BALANCE) {
     return { kind: "topup", submissionId: "" };
   }
 
@@ -273,11 +277,11 @@ function parseActionToken(value: string): { kind: EventActionKind; submissionId:
     return { kind: "topup_cancel", submissionId: "" };
   }
 
-  if (lowered === "РїРѕРґС‚РІРµСЂРґРёС‚СЊ" || lowered === "confirm") {
+  if (lowered === "РїРѕРґС‚РІРµСЂРґРёС‚СЊ" || lowered === "confirm" || lowered === RU_CONFIRM) {
     return { kind: "confirm", submissionId: "" };
   }
 
-  if (lowered === "РѕС‚РјРµРЅРёС‚СЊ" || lowered === "cancel") {
+  if (lowered === "РѕС‚РјРµРЅРёС‚СЊ" || lowered === "cancel" || lowered === RU_CANCEL) {
     return { kind: "cancel", submissionId: "" };
   }
 
@@ -710,7 +714,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       const action = resolveActionFromEvent(event, req.body);
       const loweredText = event.text.trim().toLowerCase();
 
-      if (action.kind === "topup_cancel" || loweredText === "РѕС‚РјРµРЅР°") {
+      if (action.kind === "topup_cancel" || loweredText === "РѕС‚РјРµРЅР°" || loweredText === RU_CANCEL_SHORT) {
         await handleTopupCancelAction({
           userId: event.userId,
           numericUserId,
@@ -811,7 +815,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
     if (userState?.state === BOT_STATE_AWAITING_TOPUP_PACKAGES) {
       const awaitingTopupAction = resolveActionFromEvent(event, req.body);
       const loweredText = event.text.trim().toLowerCase();
-      if (awaitingTopupAction.kind === "topup_cancel" || loweredText === "РѕС‚РјРµРЅР°") {
+      if (awaitingTopupAction.kind === "topup_cancel" || loweredText === "РѕС‚РјРµРЅР°" || loweredText === RU_CANCEL_SHORT) {
         await handleTopupCancelAction({
           userId: event.userId,
           numericUserId

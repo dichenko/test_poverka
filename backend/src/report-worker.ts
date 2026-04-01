@@ -7,6 +7,7 @@ import { GeneratedReportsRepository } from "./report-worker/generated-reports.re
 import { startReportWorkerHttpServer } from "./report-worker/http-server";
 import { createReportsRegistry } from "./report-worker/reports-registry";
 import { ReportsRunner } from "./report-worker/reports-runner";
+import { OrganizationsBalanceStartOfDaySyncRepository } from "./report-worker/organizations-balance-start-of-day-sync.repository";
 import { MailRunsRepository } from "./report-mail/mail-runs.repository";
 import { ReportRunsRepository } from "./report-mail/report-runs.repository";
 
@@ -327,6 +328,7 @@ async function start() {
     reportsTimeZone: reportEnv.REPORTS_TZ
   });
   const generatedReportsRepository = new GeneratedReportsRepository(prisma);
+  const organizationsBalanceStartOfDaySyncRepository = new OrganizationsBalanceStartOfDaySyncRepository(prisma);
   const reportRunsRepository = new ReportRunsRepository(prisma);
   const mailRunsRepository = new MailRunsRepository(prisma);
   const runner = new ReportsRunner({
@@ -334,6 +336,7 @@ async function start() {
     lockId: reportEnv.REPORTS_LOCK_ID,
     reports,
     generatedReportsRepository,
+    organizationsBalanceStartOfDaySyncRepository,
     logger,
     reportsStorageDir: reportEnv.REPORTS_STORAGE_DIR,
     reportsPublicBaseUrl: reportEnv.REPORTS_PUBLIC_BASE_URL

@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import { buildReportPaths } from "./report-paths";
 import { ReportExecutionLock } from "./report-execution-lock";
 import type { GeneratedReportsRepository } from "./generated-reports.repository";
+import type { OrganizationsBalanceStartOfDaySyncRepository } from "./organizations-balance-start-of-day-sync.repository";
 import type {
   ReportGenerator,
   ReportLogger,
@@ -18,6 +19,7 @@ interface ReportsRunnerInput {
   logger: ReportLogger;
   reportsStorageDir: string;
   reportsPublicBaseUrl: string;
+  organizationsBalanceStartOfDaySyncRepository: OrganizationsBalanceStartOfDaySyncRepository;
 }
 
 interface RunReportsInput {
@@ -36,6 +38,10 @@ function toErrorText(error: unknown) {
     return error.message;
   }
   return String(error);
+}
+
+function isFullDailyPipelineRun(input: RunReportsInput) {
+  return !input.reportCode && !input.organizationId;
 }
 
 export class ReportsRunner {
@@ -274,6 +280,54 @@ export class ReportsRunner {
             rowsCount: 0,
             errorText: toErrorText(error)
           });
+        }
+      }
+
+      if (isFullDailyPipelineRun(input)) {
+        const hasReportFailures = items.some((item) => item.status === "error");
+
+        if (hasReportFailures) {
+          this.input.logger.warn(
+            {
+              date: input.date,
+              trigger: input.trigger
+            },
+            "Skipping organizations.balance_start_of_day sync because report pipeline has errors"
+          );
+        } else {
+          try {
+            const updatedOrganizations =
+              await this.input.organizationsBalanceStartOfDaySyncRepository.syncFromCurrentBalance();
+
+            this.input.logger.info(
+              {
+                date: input.date,
+                trigger: input.trigger,
+                updatedOrganizations
+              },
+              "Synchronized organizations.balance_start_of_day after successful daily report pipeline"
+            );
+          } catch (error) {
+            this.input.logger.error(
+              {
+                err: error,
+                date: input.date,
+                trigger: input.trigger
+              },
+              "Failed to sync organizations.balance_start_of_day after daily report pipeline"
+            );
+
+            items.push({
+              reportCode: "balance_start_of_day_sync",
+              reportTitle: "Balance start-of-day sync",
+              status: "error",
+              fileName: "",
+              absolutePath: "",
+              publicUrl: "",
+              rowsCount: 0,
+              errorText: toErrorText(error)
+            });
+          }
         }
       }
     } finally {

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FlashMessage } from "@/components/flash-message";
 import { getPrisma } from "@/lib/prisma";
-import { updateOrganizationAction } from "@/app/(admin)/organizations/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +41,7 @@ export default async function EditOrganizationPage({ params, searchParams }: Edi
         <FlashMessage status={searchParams?.status} message={searchParams?.message} />
       </section>
       <section className="card">
-        <form action={updateOrganizationAction} className="form-grid">
+        <form action={`/organizations/${organization.id.toString()}/edit/submit`} method="post" className="form-grid">
           <input type="hidden" name="id" value={organization.id.toString()} />
           <label htmlFor="name">
             Name

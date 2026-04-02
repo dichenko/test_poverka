@@ -3,8 +3,5 @@ admin.poverka-bot.ru {
     reverse_proxy 127.0.0.1:3002
 }
 
-# Test/staging admin domain
-poverka-test-admin.liven8n.site {
-    reverse_proxy 127.0.0.1:3002
-}
+
 

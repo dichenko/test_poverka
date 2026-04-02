@@ -3,7 +3,6 @@ import { UserRole } from "@prisma/client";
 import { notFound } from "next/navigation";
 import { FlashMessage } from "@/components/flash-message";
 import { getPrisma } from "@/lib/prisma";
-import { updateUserAction } from "@/app/(admin)/users/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +48,7 @@ export default async function EditUserPage({ params, searchParams }: EditUserPag
       </section>
 
       <section className="card">
-        <form action={updateUserAction} className="form-grid">
+        <form action={`/users/${user.id.toString()}/edit/submit`} method="post" className="form-grid">
           <input type="hidden" name="id" value={user.id.toString()} />
           <label htmlFor="fullName">
             Full name

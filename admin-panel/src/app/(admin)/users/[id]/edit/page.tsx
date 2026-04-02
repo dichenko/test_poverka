@@ -38,7 +38,7 @@ export default async function EditUserPage({ params, searchParams }: EditUserPag
   return (
     <div className="grid-2">
       <section>
-        <h1 className="page-title">Edit user #{user.id.toString()}</h1>
+        <h1 className="page-title">Edit user (MAX user id: {user.id.toString()})</h1>
         <div className="actions">
           <Link className="button-link secondary" href="/users">
             Back to users
@@ -50,6 +50,10 @@ export default async function EditUserPage({ params, searchParams }: EditUserPag
       <section className="card">
         <form action={`/users/${user.id.toString()}/edit/submit`} method="post" className="form-grid">
           <input type="hidden" name="id" value={user.id.toString()} />
+          <label htmlFor="maxUserIdReadonly">
+            MAX user id
+            <input id="maxUserIdReadonly" value={user.id.toString()} readOnly />
+          </label>
           <label htmlFor="fullName">
             Full name
             <input id="fullName" name="fullName" defaultValue={user.fullName} required />

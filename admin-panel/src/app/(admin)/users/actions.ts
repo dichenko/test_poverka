@@ -34,6 +34,10 @@ export async function createUserAction(formData: FormData) {
 
   try {
     const input = parseUserForm(formData);
+    if (!input.maxUserId) {
+      redirect(routeWithMessage("/users", "error", "MAX user id is required."));
+    }
+
     let userTarif = input.userTarif;
     let orgName = input.orgName;
     let orgEmail = input.orgEmail;
@@ -64,6 +68,7 @@ export async function createUserAction(formData: FormData) {
 
     const user = await prisma.user.create({
       data: {
+        id: input.maxUserId,
         fullName: input.fullName,
         role: input.role,
         organizationId: input.organizationId,

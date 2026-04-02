@@ -46,6 +46,7 @@ const organizationSchema = z.object({
 
 const userSchema = z.object({
   id: idSchema.optional(),
+  maxUserId: idSchema.optional(),
   fullName: z.string().trim().min(1, "Full name is required").max(255, "Full name is too long"),
   role: z.nativeEnum(UserRole),
   organizationId: optionalOrgIdSchema,
@@ -70,6 +71,7 @@ export function parseOrganizationForm(formData: FormData) {
 export function parseUserForm(formData: FormData) {
   return userSchema.parse({
     id: readField(formData, "id") || undefined,
+    maxUserId: readField(formData, "maxUserId") || undefined,
     fullName: readField(formData, "fullName"),
     role: readField(formData, "role"),
     organizationId: readField(formData, "organizationId"),
@@ -84,4 +86,3 @@ export function parseUserForm(formData: FormData) {
 export function parseIdFromForm(formData: FormData, key = "id"): bigint {
   return idSchema.parse(readField(formData, key));
 }
-

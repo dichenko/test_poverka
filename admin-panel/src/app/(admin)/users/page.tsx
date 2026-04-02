@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 type SortDir = "asc" | "desc";
 type SearchParams = Record<string, string | string[] | undefined>;
-const USER_SORT_KEYS = ["id", "maxUserId", "fullName", "role", "organizationId", "organizationName", "phone", "city"] as const;
+const USER_SORT_KEYS = ["maxUserId", "fullName", "role", "organizationId", "organizationName", "phone", "city"] as const;
 type UserSortKey = (typeof USER_SORT_KEYS)[number];
 
 type UsersPageProps = {
@@ -28,7 +28,7 @@ function getStringParam(searchParams: SearchParams | undefined, key: string): st
 function parseSort(searchParams: SearchParams | undefined): { sortKey: UserSortKey; sortDir: SortDir } {
   const rawSort = getStringParam(searchParams, "sort");
   const rawDir = getStringParam(searchParams, "dir");
-  const sortKey: UserSortKey = USER_SORT_KEYS.includes(rawSort as UserSortKey) ? (rawSort as UserSortKey) : "id";
+  const sortKey: UserSortKey = USER_SORT_KEYS.includes(rawSort as UserSortKey) ? (rawSort as UserSortKey) : "maxUserId";
   const sortDir: SortDir = rawDir === "asc" ? "asc" : "desc";
   return { sortKey, sortDir };
 }
@@ -79,7 +79,6 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
     let result = 0;
 
     switch (sortKey) {
-      case "id":
       case "maxUserId":
         result = compareBigInt(left.id, right.id);
         break;
@@ -123,6 +122,10 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
       <section className="card">
         <h2>Add user</h2>
         <form action={createUserAction} className="form-grid">
+          <label htmlFor="maxUserId">
+            MAX user id
+            <input id="maxUserId" name="maxUserId" type="text" inputMode="numeric" pattern="[0-9]+" required />
+          </label>
           <label htmlFor="fullName">
             Full name
             <input id="fullName" name="fullName" required />
@@ -165,16 +168,6 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
         <table>
           <thead>
             <tr>
-              <th>
-                <SortableHeader
-                  label="ID"
-                  path="/users"
-                  sortKey="id"
-                  currentSort={sortKey}
-                  currentDir={sortDir}
-                  searchParams={searchParams}
-                />
-              </th>
               <th>
                 <SortableHeader
                   label="MAX user id"
@@ -251,7 +244,6 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
           <tbody>
             {users.map((user) => (
               <tr key={user.id.toString()}>
-                <td>{user.id.toString()}</td>
                 <td>{user.id.toString()}</td>
                 <td>{user.fullName}</td>
                 <td>{user.role}</td>

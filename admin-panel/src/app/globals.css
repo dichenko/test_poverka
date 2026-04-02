@@ -156,6 +156,33 @@ td {
   vertical-align: top;
 }
 
+.sortable-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.sortable-header:hover {
+  color: #1d4ed8;
+}
+
+.sortable-header.active {
+  color: #1e40af;
+}
+
+.sort-indicator {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.table-hint {
+  margin: -6px 0 10px;
+  font-size: 12px;
+  color: #64748b;
+}
+
 .login-wrap {
   min-height: 100vh;
   display: grid;
@@ -205,4 +232,3 @@ td {
     z-index: 10;
   }
 }
-

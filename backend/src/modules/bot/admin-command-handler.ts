@@ -3,7 +3,7 @@ import type { Request } from "express";
 import { logger } from "../../common/logger";
 import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
-import { resolveReportDate } from "../../report-worker/date.utils";
+import { assertValidReportDate, resolveReportDate } from "../../report-worker/date.utils";
 import { createReportMailService } from "../../report-mail/create-report-mail-service";
 import { logAuditEvent } from "../../services/audit.service";
 import { MAX_ADMIN_HELP_TEXT } from "./admin-help-text";
@@ -17,9 +17,11 @@ const WITHDRAW_FORMAT_ERROR_TEXT =
   "Неверный формат команды.\nИспользуй: /withdraw [org_id] [amount]\nПример: /withdraw 1 200";
 const ADD_ADMIN_FORMAT_ERROR_TEXT =
   "Неверный формат команды.\nИспользуй: /add_admin [max_user_id]\nПример: /add_admin 382159692";
+const REPORT_DATA_FORMAT_ERROR_TEXT =
+  "Неверный формат команды.\nИспользуй: /report_data DD/MM/YYYY\nПример: /report_data 01/04/2026";
 const INVALID_AMOUNT_TEXT = "Сумма должна быть положительным числом.";
 
-type AdminCommand = "/add" | "/withdraw" | "/add_admin" | "/report_admin" | "/report_buh";
+type AdminCommand = "/add" | "/withdraw" | "/add_admin" | "/report_admin" | "/report_buh" | "/report_data";
 const { service: reportMailService } = createReportMailService({ prisma, logger });
 
 function normalizeText(value: string) {
@@ -71,10 +73,42 @@ function pickCommandToken(text: string) {
   return (token || "").toLowerCase();
 }
 
-const adminCommandTokens = new Set<AdminCommand>(["/add", "/withdraw", "/add_admin", "/report_admin", "/report_buh"]);
+const adminCommandTokens = new Set<AdminCommand>([
+  "/add",
+  "/withdraw",
+  "/add_admin",
+  "/report_admin",
+  "/report_buh",
+  "/report_data"
+]);
 
 export function isAdminCommandText(text: string) {
   return adminCommandTokens.has(pickCommandToken(text) as AdminCommand);
+}
+
+function parseReportDateInput(value: string): string | null {
+  const normalized = value.trim();
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(normalized);
+  if (!match) {
+    return null;
+  }
+
+  const [, day, month, year] = match;
+  const reportDate = `${year}-${month}-${day}`;
+  try {
+    assertValidReportDate(reportDate);
+    return reportDate;
+  } catch {
+    return null;
+  }
+}
+
+function formatIsoReportDateToRu(value: string): string {
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) {
+    return value;
+  }
+  return `${day}/${month}/${year}`;
 }
 
 async function writeAdminActionLog(input: {
@@ -549,6 +583,159 @@ async function handleAdminReport(input: {
   }
 }
 
+async function findAdminReportsByDate(reportDate: string) {
+  const reports = await prisma.generatedReport.findMany({
+    where: {
+      reportDate: new Date(`${reportDate}T00:00:00.000Z`),
+      reportCode: {
+        in: ["arshin", "balance_arshin"]
+      },
+      status: "SUCCESS",
+      organizationId: null
+    },
+    orderBy: [
+      { reportCode: "asc" },
+      { finishedAt: "desc" }
+    ]
+  });
+
+  const byCode = new Map<string, (typeof reports)[number]>();
+  for (const report of reports) {
+    if (!byCode.has(report.reportCode)) {
+      byCode.set(report.reportCode, report);
+    }
+  }
+
+  return {
+    arshin: byCode.get("arshin") ?? null,
+    balanceArshin: byCode.get("balance_arshin") ?? null
+  };
+}
+
+async function handleAdminReportByDate(input: {
+  adminUserId: bigint;
+  userIdText: string;
+  req: Request;
+  reportDate: string;
+}) {
+  const reportDateRu = formatIsoReportDateToRu(input.reportDate);
+
+  await maxBotClient.sendMessage({
+    userId: input.userIdText,
+    text: `Ищу отчеты за ${reportDateRu}...`
+  });
+
+  try {
+    const reports = await findAdminReportsByDate(input.reportDate);
+    const arshinReport = reports.arshin;
+    const balanceArshinReport = reports.balanceArshin;
+    const missingCodes: string[] = [];
+    if (!arshinReport) {
+      missingCodes.push("Arshin");
+    }
+    if (!balanceArshinReport) {
+      missingCodes.push("Balance_Arshin");
+    }
+
+    if (missingCodes.length > 0) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: `Не найдены отчеты за ${reportDateRu}: ${missingCodes.join(", ")}.`
+      });
+
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "report_data",
+        success: false,
+        req: input.req,
+        meta: {
+          report_date: input.reportDate,
+          missing_reports: missingCodes
+        },
+        errorText: "REPORT_FILES_NOT_FOUND"
+      });
+      return;
+    }
+
+    if (!arshinReport || !balanceArshinReport) {
+      return;
+    }
+
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text:
+        `Отчеты за ${reportDateRu}:\n` +
+        `Arshin: ${arshinReport.fileName}\n${arshinReport.publicUrl}\n\n` +
+        `Balance_Arshin: ${balanceArshinReport.fileName}\n${balanceArshinReport.publicUrl}`
+    });
+
+    const mailArshin = await sendGeneratedReportToAdminEmails({
+      adminUserId: input.adminUserId,
+      reportDate: input.reportDate,
+      fileName: arshinReport.fileName,
+      filePath: arshinReport.filePath,
+      reportCode: "arshin"
+    });
+
+    const mailBalance = await sendGeneratedReportToAdminEmails({
+      adminUserId: input.adminUserId,
+      reportDate: input.reportDate,
+      fileName: balanceArshinReport.fileName,
+      filePath: balanceArshinReport.filePath,
+      reportCode: "balance_arshin"
+    });
+
+    const mailFailed = !mailArshin.ok || !mailBalance.ok;
+    if (!mailFailed) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: "Оба отчета отправлены на почту администраторов."
+      });
+    } else if (mailFailed) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: "Ссылки на отчеты отправлены, но отправка на почту выполнена с ошибкой."
+      });
+    }
+
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "report_data",
+      success: true,
+      req: input.req,
+      meta: {
+        report_date: input.reportDate,
+        arshin_file_name: arshinReport.fileName,
+        arshin_public_url: arshinReport.publicUrl,
+        balance_file_name: balanceArshinReport.fileName,
+        balance_public_url: balanceArshinReport.publicUrl,
+        arshin_mail_sent: mailArshin.ok ? mailArshin.sentCount : 0,
+        arshin_mail_failed: mailArshin.ok ? mailArshin.failedCount : null,
+        arshin_mail_error: mailArshin.ok ? null : mailArshin.errorText,
+        balance_mail_sent: mailBalance.ok ? mailBalance.sentCount : 0,
+        balance_mail_failed: mailBalance.ok ? mailBalance.failedCount : null,
+        balance_mail_error: mailBalance.ok ? null : mailBalance.errorText
+      }
+    });
+  } catch (error) {
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: "Не удалось обработать команду /report_data. Попробуй позже."
+    });
+
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "report_data",
+      success: false,
+      req: input.req,
+      meta: {
+        report_date: input.reportDate
+      },
+      errorText: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
 export async function sendAdminAccessDenied(userIdText: string) {
   await maxBotClient.sendMessage({
     userId: userIdText,
@@ -690,6 +877,35 @@ export async function handleAdminCommand(input: {
       reportCode: "balance_arshin",
       doneText: "Бухгалтерский отчет за сегодня готов.",
       command: "report_buh"
+    });
+    return;
+  }
+
+  if (command === "/report_data") {
+    const reportDate = arg1 ? parseReportDateInput(arg1) : null;
+    if (!reportDate || parseTokens(normalizedText).length !== 2) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: REPORT_DATA_FORMAT_ERROR_TEXT
+      });
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "report_data",
+        success: false,
+        req: input.req,
+        meta: {
+          raw_text: normalizedText
+        },
+        errorText: "INVALID_FORMAT"
+      });
+      return;
+    }
+
+    await handleAdminReportByDate({
+      adminUserId: input.adminUserId,
+      userIdText: input.userIdText,
+      req: input.req,
+      reportDate
     });
     return;
   }

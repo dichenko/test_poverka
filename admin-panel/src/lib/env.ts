@@ -1,4 +1,7 @@
 import "server-only";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 
 const envSchema = z.object({
@@ -14,11 +17,35 @@ const envSchema = z.object({
 type Env = z.infer<typeof envSchema>;
 
 let cachedEnv: Env | null = null;
+let envLoaded = false;
+
+function loadEnvironmentFiles() {
+  if (envLoaded) {
+    return;
+  }
+
+  const cwd = process.cwd();
+  const rootLocalEnv = path.resolve(cwd, "../.env.local");
+  const rootEnv = path.resolve(cwd, "../.env");
+  const hasRootEnv = existsSync(rootLocalEnv) || existsSync(rootEnv);
+
+  if (hasRootEnv) {
+    loadDotenv({ path: rootLocalEnv });
+    loadDotenv({ path: rootEnv });
+  } else {
+    loadDotenv({ path: path.resolve(cwd, ".env.local") });
+    loadDotenv({ path: path.resolve(cwd, ".env") });
+  }
+
+  envLoaded = true;
+}
 
 export function getEnv(): Env {
   if (cachedEnv) {
     return cachedEnv;
   }
+
+  loadEnvironmentFiles();
 
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
@@ -29,4 +56,3 @@ export function getEnv(): Env {
   cachedEnv = parsed.data;
   return cachedEnv;
 }
-

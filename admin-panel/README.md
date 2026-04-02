@@ -24,11 +24,13 @@ ADMIN_SESSION_SECRET=change_me_to_long_random_secret
 ADMIN_SESSION_DURATION_DAYS=30
 ```
 
+By default, `admin-panel` loads env from the project root (`../.env`, `../.env.local`).
+If root env files do not exist, it falls back to local `admin-panel/.env*`.
+
 ## Local run
 
 ```bash
 cd admin-panel
-cp .env.example .env
 npm install
 npm run prisma:generate
 npm run dev
@@ -56,4 +58,3 @@ docker compose up -d --build admin-panel
 docker compose ps admin-panel
 docker compose logs --tail=200 admin-panel
 ```
-

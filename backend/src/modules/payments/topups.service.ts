@@ -1039,8 +1039,11 @@ export async function createWebhookLog(input: {
   payload: unknown;
   payloadSha256: string;
 }) {
-  return prisma.yookassaWebhookLog.create({
-    data: {
+  return prisma.yookassaWebhookLog.upsert({
+    where: {
+      payloadSha256: input.payloadSha256
+    },
+    create: {
       eventType: input.eventType,
       providerObjectId: input.providerObjectId,
       remoteIp: input.remoteIp,
@@ -1049,15 +1052,19 @@ export async function createWebhookLog(input: {
       payload: input.payload as Prisma.InputJsonValue,
       payloadSha256: input.payloadSha256,
       processingStatus: "received"
+    },
+    update: {
+      eventType: input.eventType,
+      providerObjectId: input.providerObjectId,
+      remoteIp: input.remoteIp,
+      isTrustedIp: input.isTrustedIp,
+      headers: input.headers as Prisma.InputJsonValue,
+      payload: input.payload as Prisma.InputJsonValue,
+      processingStatus: "received",
+      processingError: null,
+      processedAt: null
     }
   });
-}
-
-export function isDuplicateWebhookPayloadError(error: unknown) {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
-    return false;
-  }
-  return error.code === "P2002" && error.message.toLowerCase().includes("yookassa_webhook_log_payload_sha256_key");
 }
 
 export async function fetchPaymentForWebhookObject(input: {

@@ -98,7 +98,7 @@ async function loadService() {
       create: vi.fn()
     },
     yookassaWebhookLog: {
-      create: vi.fn(),
+      upsert: vi.fn(),
       update: vi.fn()
     },
     $transaction: vi.fn()
@@ -640,5 +640,36 @@ describe("topups.service", () => {
     await service.reconcileTopupWithProvider(topup.id);
 
     expect(mockBotClient.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("reuses webhook log entry for repeated payload hash", async () => {
+    const { service, mockPrisma } = await loadService();
+
+    mockPrisma.yookassaWebhookLog.upsert.mockResolvedValue({ id: 11n });
+
+    const result = await service.createWebhookLog({
+      eventType: "payment.succeeded",
+      providerObjectId: "pay_1",
+      remoteIp: "185.71.76.1",
+      isTrustedIp: true,
+      headers: { "content-type": "application/json" },
+      payload: { event: "payment.succeeded", object: { id: "pay_1" } },
+      payloadSha256: "sha_1"
+    });
+
+    expect(result.id).toBe(11n);
+    expect(mockPrisma.yookassaWebhookLog.upsert).toHaveBeenCalledWith({
+      where: {
+        payloadSha256: "sha_1"
+      },
+      create: expect.objectContaining({
+        processingStatus: "received"
+      }),
+      update: expect.objectContaining({
+        processingStatus: "received",
+        processingError: null,
+        processedAt: null
+      })
+    });
   });
 });

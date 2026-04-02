@@ -5,7 +5,6 @@ import { logger } from "../../common/logger";
 import {
   createWebhookLog,
   fetchPaymentForWebhookObject,
-  isDuplicateWebhookPayloadError,
   markTopupWebhookProcessing,
   processPaymentCanceled,
   processPaymentSucceeded
@@ -49,39 +48,26 @@ router.post("/api/payments/yookassa/webhook", async (req, res, next) => {
 
   let webhookLogId: bigint | null = null;
 
-  try {
-    const webhookLog = await createWebhookLog({
-      eventType,
-      providerObjectId,
-      remoteIp,
-      isTrustedIp,
-      headers: normalizeHeaders(req.headers as Record<string, unknown>),
-      payload: req.body ?? {},
-      payloadSha256
-    });
+  const webhookLog = await createWebhookLog({
+    eventType,
+    providerObjectId,
+    remoteIp,
+    isTrustedIp,
+    headers: normalizeHeaders(req.headers as Record<string, unknown>),
+    payload: req.body ?? {},
+    payloadSha256
+  });
 
-    webhookLogId = webhookLog.id;
-  } catch (error) {
-    if (isDuplicateWebhookPayloadError(error)) {
-      return res.status(200).json({ ok: true, duplicate: true });
-    }
-    return next(error);
-  }
+  webhookLogId = webhookLog.id;
 
   if (!isTrustedIp) {
-    await markTopupWebhookProcessing({
-      webhookLogId: webhookLogId!,
-      processingStatus: "rejected_untrusted_ip",
-      processingError: `Untrusted webhook source ip: ${remoteIp || "unknown"}`
-    });
-
-    return res.status(403).json({
-      ok: false,
-      error: {
-        code: "WEBHOOK_IP_NOT_ALLOWED",
-        message: "Webhook source IP is not allowed."
-      }
-    });
+    logger.warn(
+      {
+        webhookLogId: webhookLogId?.toString(),
+        remoteIp: remoteIp ?? "unknown"
+      },
+      "YooKassa webhook IP is not in allowlist, processing anyway"
+    );
   }
 
   if (eventType !== "payment.succeeded" && eventType !== "payment.canceled") {

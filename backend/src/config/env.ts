@@ -5,7 +5,9 @@ const defaultYookassaTimeoutMs = Number(
   process.env.YOOKASSA_HTTP_TIMEOUT_MS ?? process.env.YOOKASSA_REQUEST_TIMEOUT_MS ?? 10000
 );
 const defaultYookassaWebhookAllowedIps =
-  process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS ?? process.env.YOOKASSA_WEBHOOK_IP_ALLOWLIST ?? "127.0.0.1,::1";
+  process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS ??
+  process.env.YOOKASSA_WEBHOOK_IP_ALLOWLIST ??
+  "185.71.76.0/27,185.71.77.0/27,77.75.153.0/25,77.75.156.11,77.75.156.35,77.75.154.128/25,2a02:5180::/32,127.0.0.1,::1";
 const defaultTopupTtlSeconds = Number(process.env.TOPUP_LINK_TTL_SECONDS ?? process.env.PAYMENT_INVOICE_TTL_SECONDS ?? 180);
 const defaultYookassaApiBaseUrl = process.env.YOOKASSA_API_BASE_URL ?? "https://api.yookassa.ru/v3";
 const defaultReportWorkerInternalBaseUrl = (() => {

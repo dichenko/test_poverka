@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
+import { getEnv } from "@/lib/env";
 import { getReadableError } from "@/lib/errors";
 import { getPrisma } from "@/lib/prisma";
 import { readAdminSession } from "@/lib/session";
 import { parseUserForm } from "@/lib/validators";
 
 function redirectWithMessage(request: Request, path: string, status: "success" | "error", message: string) {
-  const url = new URL(path, request.url);
+  const baseUrl = getEnv().ADMIN_PANEL_PUBLIC_URL;
+  const url = new URL(path, baseUrl);
   url.searchParams.set("status", status);
   url.searchParams.set("message", message);
   return NextResponse.redirect(url);
@@ -19,7 +21,7 @@ export async function POST(
 ) {
   const session = readAdminSession();
   if (!session) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/login", getEnv().ADMIN_PANEL_PUBLIC_URL));
   }
 
   const targetPath = `/users/${context.params.id}/edit`;
@@ -65,4 +67,3 @@ export async function POST(
     return redirectWithMessage(request, targetPath, "error", message);
   }
 }
-

@@ -17,6 +17,7 @@ const HEADERS = [
   "Дата поверки",
   "Дата следующей поверки",
   "Телефон клиента",
+  "Клиент",
   "Город",
   "Адрес",
   "Фотографии",
@@ -26,7 +27,7 @@ const HEADERS = [
   "Наименование организации"
 ] as const;
 
-const COLUMN_WIDTHS = [8, 32, 24, 14, 12, 16, 22, 22, 20, 36, 90, 16, 32, 22, 30] as const;
+const COLUMN_WIDTHS = [8, 32, 24, 14, 12, 16, 22, 22, 20, 20, 36, 90, 16, 32, 22, 30] as const;
 
 interface ArshinRow {
   submission_id: string;
@@ -184,13 +185,14 @@ export function createArshinReportGenerator(input: CreateArshinReportGeneratorIn
           c6: normalizeCellValue(row.verification_date),
           c7: normalizeCellValue(row.next_verification_date),
           c8: normalizeCellValue(row.client_phone),
-          c9: normalizeCellValue(row.city),
-          c10: normalizeCellValue(row.address),
-          c11: normalizeCellValue(row.photos),
-          c12: normalizeCellValue(row.max_id),
-          c13: normalizeCellValue(row.user_fullname),
-          c14: normalizeCellValue(row.user_phone),
-          c15: normalizeCellValue(row.org_name)
+          c9: "",
+          c10: normalizeCellValue(row.city),
+          c11: normalizeCellValue(row.address),
+          c12: normalizeCellValue(row.photos),
+          c13: normalizeCellValue(row.max_id),
+          c14: normalizeCellValue(row.user_fullname),
+          c15: normalizeCellValue(row.user_phone),
+          c16: normalizeCellValue(row.org_name)
         });
       });
 
@@ -201,7 +203,7 @@ export function createArshinReportGenerator(input: CreateArshinReportGeneratorIn
         row.alignment = { vertical: "top", wrapText: true };
       });
 
-      worksheet.getColumn(11).alignment = { vertical: "top", wrapText: true };
+      worksheet.getColumn(12).alignment = { vertical: "top", wrapText: true };
 
       const tempPath = `${paths.absolutePath}.tmp`;
 

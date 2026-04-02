@@ -461,13 +461,14 @@ async function sendGeneratedReportToAdminEmails(input: {
   fileName: string;
   filePath: string;
   reportCode: "arshin" | "balance_arshin";
+  force?: boolean;
 }) {
   try {
     const mailResult = await reportMailService.sendOne({
       reportDate: input.reportDate,
       fileName: input.fileName,
       filePath: input.filePath,
-      force: false,
+      force: input.force ?? false,
       requestedBy: `max-bot-admin:${input.adminUserId.toString()}`
     });
 
@@ -535,7 +536,8 @@ async function handleAdminReport(input: {
       reportDate: report.reportDate,
       fileName: report.fileName,
       filePath: report.filePath,
-      reportCode: input.reportCode
+      reportCode: input.reportCode,
+      force: true
     });
 
     if (mailResult.ok && mailResult.sentCount > 0) {

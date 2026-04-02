@@ -7,3 +7,9 @@ postgres-data/
 pgadmin-data/
 project_rules.md
 db_tables_overview.md
+
+# Caddy
+infra/caddy/
+Caddyfile
+Caddyfile.*
+*.caddy

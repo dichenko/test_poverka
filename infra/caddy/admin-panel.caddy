@@ -1,7 +1,0 @@
-# Production admin domain
-admin.poverka-bot.ru {
-    reverse_proxy 127.0.0.1:3002
-}
-
-
-

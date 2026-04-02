@@ -13,5 +13,5 @@ export const MAX_ADMIN_HELP_TEXT = `Вы администратор. Вот сп
 
 /report_buh — сформировать и отправить отчет бухгалтеру за сегодня
 
-/report_data [DD/MM/YYYY] — отправить ссылки и email по отчетам Arshin и Balance_Arshin за указанную дату
+/report_data [DD/MM/YYYY] — сформировать и отправить отчеты за указанную дату
 Пример: /report_data 01/04/2026`;

@@ -4,6 +4,7 @@ import { logger } from "../../common/logger";
 import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
 import { resolveReportDate } from "../../report-worker/date.utils";
+import { createReportMailService } from "../../report-mail/create-report-mail-service";
 import { logAuditEvent } from "../../services/audit.service";
 import { MAX_ADMIN_HELP_TEXT } from "./admin-help-text";
 import { maxBotClient } from "./max-bot.client";
@@ -19,6 +20,7 @@ const ADD_ADMIN_FORMAT_ERROR_TEXT =
 const INVALID_AMOUNT_TEXT = "Сумма должна быть положительным числом.";
 
 type AdminCommand = "/add" | "/withdraw" | "/add_admin" | "/report_admin" | "/report_buh";
+const { service: reportMailService } = createReportMailService({ prisma, logger });
 
 function normalizeText(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -414,8 +416,60 @@ async function runReportByCode(reportCode: "arshin" | "balance_arshin") {
   return {
     reportDate,
     fileName: generated.fileName,
+    filePath: generated.filePath,
     publicUrl: generated.publicUrl
   };
+}
+
+async function sendGeneratedReportToAdminEmails(input: {
+  adminUserId: bigint;
+  reportDate: string;
+  fileName: string;
+  filePath: string;
+  reportCode: "arshin" | "balance_arshin";
+}) {
+  try {
+    const mailResult = await reportMailService.sendOne({
+      reportDate: input.reportDate,
+      fileName: input.fileName,
+      filePath: input.filePath,
+      force: false,
+      requestedBy: `max-bot-admin:${input.adminUserId.toString()}`
+    });
+
+    logger.info(
+      {
+        reportCode: input.reportCode,
+        reportDate: input.reportDate,
+        fileName: input.fileName,
+        runId: mailResult.runId.toString(),
+        totalDeliveries: mailResult.totalDeliveries,
+        sentCount: mailResult.sentCount,
+        failedCount: mailResult.failedCount
+      },
+      "Admin report email run completed"
+    );
+
+    return {
+      ok: true as const,
+      ...mailResult
+    };
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        reportCode: input.reportCode,
+        reportDate: input.reportDate,
+        fileName: input.fileName
+      },
+      "Failed to send admin report to email recipients"
+    );
+
+    return {
+      ok: false as const,
+      errorText: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
 
 async function handleAdminReport(input: {
@@ -442,6 +496,26 @@ async function handleAdminReport(input: {
       text: `Файл отчета: ${report.fileName}\n${report.publicUrl}`
     });
 
+    const mailResult = await sendGeneratedReportToAdminEmails({
+      adminUserId: input.adminUserId,
+      reportDate: report.reportDate,
+      fileName: report.fileName,
+      filePath: report.filePath,
+      reportCode: input.reportCode
+    });
+
+    if (mailResult.ok && mailResult.sentCount > 0) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: "Отчет отправлен на почту администраторов."
+      });
+    } else if (!mailResult.ok) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: "Отчет в чат отправлен, но отправка на почту администраторов не удалась."
+      });
+    }
+
     await writeAdminActionLog({
       adminUserId: input.adminUserId,
       command: input.command,
@@ -451,7 +525,10 @@ async function handleAdminReport(input: {
         report_code: input.reportCode,
         file_name: report.fileName,
         report_date: report.reportDate,
-        public_url: report.publicUrl
+        public_url: report.publicUrl,
+        mail_sent: mailResult.ok ? mailResult.sentCount : 0,
+        mail_failed: mailResult.ok ? mailResult.failedCount : null,
+        mail_error: mailResult.ok ? null : mailResult.errorText
       }
     });
   } catch (error) {

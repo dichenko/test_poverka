@@ -20,6 +20,14 @@ function logAdminAction(actor: string, action: string, payload: Record<string, u
   });
 }
 
+function isRedirectError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const digest = Reflect.get(error, "digest");
+  return typeof digest === "string" && digest.startsWith("NEXT_REDIRECT");
+}
+
 export async function createUserAction(formData: FormData) {
   const session = requireAdminSession();
   const prisma = getPrisma();
@@ -74,6 +82,9 @@ export async function createUserAction(formData: FormData) {
     revalidatePath("/users");
     redirect(routeWithMessage("/users", "success", "User created."));
   } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
     const message = getReadableError(error, "Failed to create user.");
     redirect(routeWithMessage("/users", "error", message));
   }
@@ -111,6 +122,9 @@ export async function updateUserAction(formData: FormData) {
     revalidatePath(`/users/${user.id.toString()}/edit`);
     redirect(routeWithMessage(`/users/${user.id.toString()}/edit`, "success", "User updated."));
   } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
     const id = String(formData.get("id") ?? "");
     const target = /^\d+$/.test(id) ? `/users/${id}/edit` : "/users";
     const message = getReadableError(error, "Failed to update user.");
@@ -135,6 +149,9 @@ export async function deleteUserAction(formData: FormData) {
     revalidatePath("/users");
     redirect(routeWithMessage("/users", "success", "User deleted."));
   } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
     const message = getReadableError(error, "Failed to delete user.");
     redirect(routeWithMessage("/users", "error", message));
   }

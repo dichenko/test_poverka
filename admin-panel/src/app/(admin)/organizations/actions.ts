@@ -20,6 +20,14 @@ function logAdminAction(actor: string, action: string, payload: Record<string, u
   });
 }
 
+function isRedirectError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const digest = Reflect.get(error, "digest");
+  return typeof digest === "string" && digest.startsWith("NEXT_REDIRECT");
+}
+
 export async function createOrganizationAction(formData: FormData) {
   const session = requireAdminSession();
   const prisma = getPrisma();
@@ -44,6 +52,9 @@ export async function createOrganizationAction(formData: FormData) {
     revalidatePath("/users");
     redirect(routeWithMessage("/organizations", "success", "Organization created."));
   } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
     const message = getReadableError(error, "Failed to create organization.");
     redirect(routeWithMessage("/organizations", "error", message));
   }
@@ -81,6 +92,9 @@ export async function updateOrganizationAction(formData: FormData) {
       routeWithMessage(`/organizations/${organization.id.toString()}/edit`, "success", "Organization updated.")
     );
   } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
     const id = String(formData.get("id") ?? "");
     const target = /^\d+$/.test(id) ? `/organizations/${id}/edit` : "/organizations";
     const message = getReadableError(error, "Failed to update organization.");
@@ -106,6 +120,9 @@ export async function deleteOrganizationAction(formData: FormData) {
     revalidatePath("/users");
     redirect(routeWithMessage("/organizations", "success", "Organization deleted."));
   } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
     const message = getReadableError(error, "Failed to delete organization.");
     redirect(routeWithMessage("/organizations", "error", message));
   }

@@ -18,6 +18,7 @@ Production-ready baseline for MAX bot + miniapp + PostgreSQL.
 - `payment-worker` -> background service (no public port)
 - `report-worker` -> background service + internal HTTP `127.0.0.1:3010`
 - `mail-worker` -> background SMTP delivery service (no public port)
+- `admin-panel` -> `127.0.0.1:3002` (internal, behind Caddy)
 - `miniapp` -> `127.0.0.1:8080`
 
 ## Important infra decision
@@ -50,6 +51,7 @@ docker compose up -d --build
 ```bash
 curl http://127.0.0.1:3000/health/live
 curl http://127.0.0.1:3000/health/ready
+curl http://127.0.0.1:3002/login
 curl http://127.0.0.1:8080/health
 ```
 
@@ -63,8 +65,31 @@ Use `deploy.sh`:
 
 It runs:
 
-- `git pull`
-- `docker compose up -d --build db pgadmin backend photo-worker payment-worker report-worker mail-worker miniapp`
+- `git pull --ff-only origin main`
+- `docker compose up -d --build db pgadmin backend photo-worker payment-worker report-worker mail-worker admin-panel miniapp`
+
+## Admin panel deploy only
+
+```bash
+git pull --ff-only origin main
+docker compose up -d --build admin-panel
+docker compose ps admin-panel
+docker compose logs --tail=200 admin-panel
+```
+
+## Caddy (admin-panel)
+
+Use snippet from `infra/caddy/admin-panel.caddy`:
+
+```caddy
+admin.poverka-bot.ru {
+    reverse_proxy 127.0.0.1:3002
+}
+
+poverka-test-admin.liven8n.site {
+    reverse_proxy 127.0.0.1:3002
+}
+```
 
 ## Logs
 
@@ -76,6 +101,7 @@ docker compose logs -f photo-worker
 docker compose logs -f payment-worker
 docker compose logs -f report-worker
 docker compose logs -f mail-worker
+docker compose logs -f admin-panel
 ```
 
 ## Prisma commands

@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model Organization {
+  id                BigInt  @id @default(autoincrement()) @map("org_id")
+  balance           BigInt  @default(0)
+  email             String? @unique @map("org_email")
+  name              String  @map("org_name")
+  balanceStartOfDay BigInt? @map("balance_start_of_day")
+  userTarif         BigInt  @default(0) @map("user_tarif")
+
+  users User[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             BigInt   @id @default(autoincrement()) @map("user_id")
+  organizationId BigInt?  @map("org_id")
+  role           UserRole @default(USER)
+  userTarif      Float?   @map("user_tarif") @db.DoublePrecision
+  city           String?  @map("user_city")
+  fullName       String   @map("user_fullname")
+  phone          String?  @map("user_phone")
+  orgName        String?  @map("org_name")
+  orgEmail       String?  @map("org_email")
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@map("users")
+}

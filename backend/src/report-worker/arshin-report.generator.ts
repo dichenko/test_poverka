@@ -83,8 +83,8 @@ async function fetchArshinRows(input: {
       ms.meter_number,
       ms.water_type::text AS water_type_raw,
       CASE
-        WHEN lower(ms.water_type::text) IN ('hvs', 'cold', 'хвс') THEN 'ХВС'
-        WHEN lower(ms.water_type::text) IN ('gvs', 'hot', 'гвс') THEN 'ГВС'
+        WHEN lower(ms.water_type::text) IN ('hvs', 'cold', 'хвс') THEN 'Холодная вода'
+        WHEN lower(ms.water_type::text) IN ('gvs', 'hot', 'гвс') THEN 'Горячая вода'
         ELSE NULL
       END AS water_type_label,
       ms.production_year,
@@ -166,14 +166,6 @@ export function createArshinReportGenerator(input: CreateArshinReportGeneratorIn
         width: COLUMN_WIDTHS[index]
       }));
       worksheet.views = [{ state: "frozen", ySplit: 1 }];
-      worksheet.autoFilter = {
-        from: { row: 1, column: 1 },
-        to: { row: 1, column: HEADERS.length }
-      };
-
-      const headerRow = worksheet.getRow(1);
-      headerRow.font = { bold: true };
-      headerRow.alignment = { vertical: "top", horizontal: "left", wrapText: true };
 
       rows.forEach((row, index) => {
         worksheet.addRow({

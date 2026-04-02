@@ -42,6 +42,8 @@ interface SetMyCommandsResult {
   body?: string;
 }
 
+const MAX_PLATFORM_API_BASE_URL = "https://platform-api.max.ru";
+
 export class MaxBotClient {
   async sendMessage(payload: SendMessagePayload): Promise<SendMessageResult> {
     const endpoint = new URL("/messages", env.MAX_BOT_API_BASE_URL);
@@ -134,32 +136,52 @@ export class MaxBotClient {
   }
 
   async setMyCommands(commands: MaxBotCommand[]): Promise<SetMyCommandsResult> {
-    const endpoint = new URL("/me", env.MAX_BOT_API_BASE_URL);
+    const setCommandsByBaseUrl = async (baseUrl: string): Promise<SetMyCommandsResult> => {
+      const endpoint = new URL("/me", baseUrl);
 
-    try {
-      const response = await fetch(endpoint, {
-        method: "PATCH",
-        headers: {
-          Authorization: env.MAX_BOT_TOKEN,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ commands })
-      });
+      try {
+        const response = await fetch(endpoint, {
+          method: "PATCH",
+          headers: {
+            Authorization: env.MAX_BOT_TOKEN,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ commands })
+        });
 
-      if (!response.ok) {
-        const responseBody = await response.text();
-        logger.error(
-          { status: response.status, body: responseBody, endpoint: endpoint.toString(), commands },
-          "Failed to set MAX bot commands"
-        );
-        return { ok: false, status: response.status, body: responseBody };
+        if (!response.ok) {
+          const responseBody = await response.text();
+          logger.error(
+            { status: response.status, body: responseBody, endpoint: endpoint.toString(), commands },
+            "Failed to set MAX bot commands"
+          );
+          return { ok: false, status: response.status, body: responseBody };
+        }
+
+        return { ok: true, status: response.status };
+      } catch (error) {
+        logger.error({ err: error, endpoint: endpoint.toString(), commands }, "MAX setMyCommands failed");
+        return { ok: false };
       }
+    };
 
-      return { ok: true, status: response.status };
-    } catch (error) {
-      logger.error({ err: error, endpoint: endpoint.toString(), commands }, "MAX setMyCommands failed");
-      return { ok: false };
+    const primaryResult = await setCommandsByBaseUrl(env.MAX_BOT_API_BASE_URL);
+    if (primaryResult.ok) {
+      return primaryResult;
     }
+
+    const primaryHost = new URL(env.MAX_BOT_API_BASE_URL).host;
+    const fallbackHost = new URL(MAX_PLATFORM_API_BASE_URL).host;
+    if (primaryHost === fallbackHost) {
+      return primaryResult;
+    }
+
+    logger.warn(
+      { primaryBaseUrl: env.MAX_BOT_API_BASE_URL, fallbackBaseUrl: MAX_PLATFORM_API_BASE_URL },
+      "Retrying MAX bot commands sync via platform API base URL"
+    );
+
+    return setCommandsByBaseUrl(MAX_PLATFORM_API_BASE_URL);
   }
 }
 

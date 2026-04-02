@@ -31,6 +31,17 @@ interface AnswerCallbackPayload {
   };
 }
 
+export interface MaxBotCommand {
+  name: string;
+  description?: string | null;
+}
+
+interface SetMyCommandsResult {
+  ok: boolean;
+  status?: number;
+  body?: string;
+}
+
 export class MaxBotClient {
   async sendMessage(payload: SendMessagePayload): Promise<SendMessageResult> {
     const endpoint = new URL("/messages", env.MAX_BOT_API_BASE_URL);
@@ -119,6 +130,35 @@ export class MaxBotClient {
       }
     } catch (error) {
       logger.error({ err: error, callbackId: payload.callbackId, endpoint: endpoint.toString() }, "MAX answerCallback failed");
+    }
+  }
+
+  async setMyCommands(commands: MaxBotCommand[]): Promise<SetMyCommandsResult> {
+    const endpoint = new URL("/me", env.MAX_BOT_API_BASE_URL);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "PATCH",
+        headers: {
+          Authorization: env.MAX_BOT_TOKEN,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ commands })
+      });
+
+      if (!response.ok) {
+        const responseBody = await response.text();
+        logger.error(
+          { status: response.status, body: responseBody, endpoint: endpoint.toString(), commands },
+          "Failed to set MAX bot commands"
+        );
+        return { ok: false, status: response.status, body: responseBody };
+      }
+
+      return { ok: true, status: response.status };
+    } catch (error) {
+      logger.error({ err: error, endpoint: endpoint.toString(), commands }, "MAX setMyCommands failed");
+      return { ok: false };
     }
   }
 }

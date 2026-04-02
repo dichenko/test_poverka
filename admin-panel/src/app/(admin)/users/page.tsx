@@ -68,18 +68,6 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
             City
             <input id="city" name="city" />
           </label>
-          <label htmlFor="userTarif">
-            User tariff
-            <input id="userTarif" name="userTarif" type="number" min="0" step="0.01" />
-          </label>
-          <label htmlFor="orgName">
-            User org name
-            <input id="orgName" name="orgName" />
-          </label>
-          <label htmlFor="orgEmail">
-            User org email
-            <input id="orgEmail" name="orgEmail" type="email" />
-          </label>
           <div className="actions">
             <button type="submit">Create</button>
           </div>

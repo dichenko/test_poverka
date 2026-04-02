@@ -26,6 +26,34 @@ export async function createUserAction(formData: FormData) {
 
   try {
     const input = parseUserForm(formData);
+    let userTarif = input.userTarif;
+    let orgName = input.orgName;
+    let orgEmail = input.orgEmail;
+
+    if (input.organizationId) {
+      const organization = await prisma.organization.findUnique({
+        where: { id: input.organizationId },
+        select: {
+          name: true,
+          email: true,
+          userTarif: true
+        }
+      });
+
+      if (!organization) {
+        redirect(routeWithMessage("/users", "error", "Selected organization was not found."));
+      }
+
+      const organizationTarif = Number(organization.userTarif);
+      if (!Number.isFinite(organizationTarif)) {
+        redirect(routeWithMessage("/users", "error", "Organization tariff is invalid."));
+      }
+
+      userTarif = organizationTarif;
+      orgName = organization.name;
+      orgEmail = organization.email;
+    }
+
     const user = await prisma.user.create({
       data: {
         fullName: input.fullName,
@@ -33,9 +61,9 @@ export async function createUserAction(formData: FormData) {
         organizationId: input.organizationId,
         phone: input.phone,
         city: input.city,
-        userTarif: input.userTarif,
-        orgName: input.orgName,
-        orgEmail: input.orgEmail
+        userTarif,
+        orgName,
+        orgEmail
       }
     });
 

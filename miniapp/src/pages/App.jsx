@@ -64,7 +64,11 @@ const submissionSchema = z
     waterType: z.enum(["HVS", "GVS"], { message: "Выберите тип воды" }),
     equipmentTypeId: z.string().trim().min(1, "Выберите тип счетчика"),
     customEquipmentTypeName: z.string().trim().max(120, "Слишком длинный тип счетчика").optional(),
-    factoryNumber: z.string().trim().regex(/^[0-9A-Za-zА-Яа-яЁё]+$/u, "Введите заводской номер (буквы и цифры)"),
+    factoryNumber: z
+      .string()
+      .trim()
+      .min(1, "Введите заводской номер")
+      .max(64, "Заводской номер должен быть не длиннее 64 символов"),
     productionYear: z
       .string()
       .trim()

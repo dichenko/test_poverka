@@ -167,6 +167,8 @@ Implemented now:
 - Daily cron run via `REPORTS_CRON` (default `5 22 * * *`)
 - Timezone-aware logic via `REPORTS_TZ` (default `Europe/Moscow`)
 - PostgreSQL advisory lock + in-memory guard against parallel runs
+- Daily `organizations.balance_start_of_day = organizations.balance` sync only after successful full cron pipeline
+- Manual report runs are read-only and do not execute balance start-of-day sync
 - Metadata tracking in DB table `generated_reports`
 - Daily run marker in DB table `report_runs`
 - Automatic enqueue of mail delivery run (`mail_runs`) only after full successful daily generation

@@ -29,6 +29,14 @@ describe("createDraftSubmissionSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("accepts factory number with special symbols", () => {
+    const parsed = createDraftSubmissionSchema.safeParse({
+      ...makePayload(),
+      factoryNumber: "№12/34-AB(test)_*#"
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it("rejects payload without predefined or custom equipment type", () => {
     const parsed = createDraftSubmissionSchema.safeParse({
       ...makePayload(),

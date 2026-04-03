@@ -126,6 +126,38 @@ describe("ReportsRunner balance_start_of_day sync", () => {
     expect(organizationsBalanceStartOfDaySyncRepository.syncFromCurrentBalance).not.toHaveBeenCalled();
   });
 
+  it("does not run organizations balance sync for full manual runs", async () => {
+    const logger = createLogger();
+    const generatedReportsRepository = createGeneratedReportsRepository();
+    const organizationsBalanceStartOfDaySyncRepository = {
+      syncFromCurrentBalance: vi.fn(async () => 1)
+    };
+
+    const runner = new ReportsRunner({
+      databaseUrl: "postgres://test",
+      lockId: 1n,
+      reports: [createReport("arshin"), createReport("balance_arshin"), createReport("org_metrolog")],
+      generatedReportsRepository: generatedReportsRepository as any,
+      organizationsBalanceStartOfDaySyncRepository: organizationsBalanceStartOfDaySyncRepository as any,
+      logger,
+      reportsStorageDir: "C:/tmp/reports",
+      reportsPublicBaseUrl: "https://example.com/reports"
+    });
+
+    const result = await runner.run({
+      date: "2026-04-01",
+      trigger: "manual-http"
+    });
+
+    expect(result.items.every((item) => item.status === "success")).toBe(true);
+    expect(organizationsBalanceStartOfDaySyncRepository.syncFromCurrentBalance).not.toHaveBeenCalled();
+    expect(
+      (logger.info as any).mock.calls.some((call: unknown[]) =>
+        String(call[1]).includes("Skipping organizations.balance_start_of_day sync for non-cron full run")
+      )
+    ).toBe(true);
+  });
+
   it("skips organizations balance sync when at least one report failed", async () => {
     const logger = createLogger();
     const generatedReportsRepository = createGeneratedReportsRepository();

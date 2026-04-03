@@ -44,6 +44,10 @@ function isFullDailyPipelineRun(input: RunReportsInput) {
   return !input.reportCode && !input.organizationId;
 }
 
+function shouldRunBalanceStartOfDaySync(input: RunReportsInput) {
+  return isFullDailyPipelineRun(input) && input.trigger === "cron";
+}
+
 export class ReportsRunner {
   private readonly reportsByCode: Map<string, ReportGenerator>;
   private readonly lock: ReportExecutionLock;
@@ -283,7 +287,17 @@ export class ReportsRunner {
         }
       }
 
-      if (isFullDailyPipelineRun(input)) {
+      if (isFullDailyPipelineRun(input) && input.trigger !== "cron") {
+        this.input.logger.info(
+          {
+            date: input.date,
+            trigger: input.trigger
+          },
+          "Skipping organizations.balance_start_of_day sync for non-cron full run"
+        );
+      }
+
+      if (shouldRunBalanceStartOfDaySync(input)) {
         const hasReportFailures = items.some((item) => item.status === "error");
 
         if (hasReportFailures) {

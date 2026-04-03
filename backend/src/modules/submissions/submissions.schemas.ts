@@ -1,7 +1,6 @@
 import { SubmissionStatus, WaterType } from "@prisma/client";
 import { z } from "zod";
 
-const FACTORY_NUMBER_REGEX = /^[0-9A-Za-zА-Яа-яЁё]+$/u;
 const CUSTOM_EQUIPMENT_TYPE_MAX_LENGTH = 120;
 
 export const createDraftSubmissionSchema = z.object({
@@ -17,8 +16,7 @@ export const createDraftSubmissionSchema = z.object({
     .string()
     .trim()
     .min(1)
-    .max(64)
-    .regex(FACTORY_NUMBER_REGEX, "factoryNumber must contain only letters and digits"),
+    .max(64),
   productionYear: z.coerce.number().int().min(1950).max(2050),
   reading: z
     .string()

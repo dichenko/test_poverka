@@ -25,8 +25,53 @@ import {
 } from "./submissions.service";
 
 const router = Router();
+const MAX_CONFIRMATION_RETRIES = 3;
+const MAX_CONFIRMATION_RETRY_DELAY_MS = 1000;
 
 router.use("/submissions", requireAuth);
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function formatDateTimeMsk(value: Date) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(value);
+}
+
+function buildMaxDeliveryFailureMessage(maxUserId: string) {
+  const datetime = formatDateTimeMsk(new Date());
+  return `Заявка не отправлена - проблема с сетевым подключением. Закройте форму, отправьте в бот команду /start и заполните заявку заново.\nИнформация для техподдержки: max_id ${maxUserId} datetime ${datetime}`;
+}
+
+async function sendMessageWithRetry(payload: {
+  userId: string;
+  text: string;
+  attachments?: Array<Record<string, any>>;
+}) {
+  let result: Awaited<ReturnType<typeof maxBotClient.sendMessage>> = { ok: false };
+
+  for (let attempt = 0; attempt <= MAX_CONFIRMATION_RETRIES; attempt += 1) {
+    result = await maxBotClient.sendMessage(payload);
+    if (result.ok) {
+      return result;
+    }
+
+    if (attempt < MAX_CONFIRMATION_RETRIES) {
+      await sleep(MAX_CONFIRMATION_RETRY_DELAY_MS);
+    }
+  }
+
+  return result;
+}
 
 function reviewKeyboard(submissionId: string) {
   return [
@@ -92,7 +137,7 @@ async function handleCreateDraft(req: Request, res: Response, next: NextFunction
       req
     });
 
-    const sent = await maxBotClient.sendMessage({
+    const sent = await sendMessageWithRetry({
       userId: req.auth!.userId,
       text: submissionReviewMessage({
         address: submission.address,
@@ -107,7 +152,7 @@ async function handleCreateDraft(req: Request, res: Response, next: NextFunction
     });
 
     if (!sent.ok) {
-      throw new AppError("Failed to send confirmation message to MAX.", 502, "MAX_MESSAGE_SEND_FAILED");
+      throw new AppError(buildMaxDeliveryFailureMessage(req.auth!.userId), 502, "MAX_MESSAGE_SEND_FAILED");
     }
 
     return res.status(201).json({

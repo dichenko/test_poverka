@@ -16,6 +16,7 @@ Production-ready baseline for MAX bot + miniapp + PostgreSQL.
 - `backend` -> `127.0.0.1:3000`
 - `photo-worker` -> background service (no public port)
 - `payment-worker` -> background service (no public port)
+- `cleanup-worker` -> daily cleanup service (no public port)
 - `report-worker` -> background service + internal HTTP `127.0.0.1:3010`
 - `mail-worker` -> background SMTP delivery service (no public port)
 - `admin-panel` -> `127.0.0.1:3002` (internal, behind Caddy)
@@ -66,7 +67,7 @@ Use `deploy.sh`:
 It runs:
 
 - `git pull --ff-only origin main`
-- `docker compose up -d --build db pgadmin backend photo-worker payment-worker report-worker mail-worker admin-panel miniapp`
+- `docker compose up -d --build db pgadmin backend photo-worker payment-worker cleanup-worker report-worker mail-worker admin-panel miniapp`
 
 ## Admin panel deploy only
 
@@ -99,6 +100,7 @@ poverka-test-admin.liven8n.site {
 ./logs.sh
 docker compose logs -f photo-worker
 docker compose logs -f payment-worker
+docker compose logs -f cleanup-worker
 docker compose logs -f report-worker
 docker compose logs -f mail-worker
 docker compose logs -f admin-panel
@@ -156,6 +158,27 @@ Quick check after deploy:
 1. Upload photo through bot flow.
 2. `docker compose logs -f photo-worker` and wait for `Photo processed successfully`.
 3. In DB, check `files.processed_at`, `files.compressed_path`, `files.public_url`, `files.processing_error`.
+
+## Cleanup Worker
+
+`cleanup-worker` is a dedicated service for deleting old files every day.
+
+Flow:
+
+1. Runs daily by cron `FILE_CLEANUP_CRON` (default `0 1 * * *`) in `FILE_CLEANUP_TZ` (default `Europe/Moscow`).
+2. Finds photos in `files` older than `FILE_RETENTION_DAYS` (default `30`) and deletes physical files + DB rows.
+3. Finds report files in `generated_reports` older than `FILE_RETENTION_DAYS` and deletes physical files + DB rows.
+4. Works in batches (`FILE_CLEANUP_BATCH_SIZE`, default `200`) with per-record error logging.
+
+Required env vars:
+
+```bash
+FILE_RETENTION_DAYS=30
+FILE_CLEANUP_CRON=0 1 * * *
+FILE_CLEANUP_TZ=Europe/Moscow
+FILE_CLEANUP_BATCH_SIZE=200
+REPORTS_BASE_DIR=/app/storage/reports
+```
 
 ## Report Worker (Excel reports)
 

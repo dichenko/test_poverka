@@ -23,6 +23,7 @@ const defaultReportsPublicBaseUrl = (() => {
   }
   return "http://localhost:3000/public/reports";
 })();
+const defaultFileCleanupTz = process.env.FILE_CLEANUP_TZ ?? process.env.APP_TIMEZONE ?? "Europe/Moscow";
 
 const envSchema = z.object({
   APP_TIMEZONE: z.string().default(process.env.APP_TIMEZONE || "Europe/Moscow"),
@@ -76,6 +77,10 @@ const envSchema = z.object({
   REPORTS_HTTP_PORT: z.coerce.number().int().positive().default(3010),
   REPORT_WORKER_INTERNAL_BASE_URL: z.string().url().default(defaultReportWorkerInternalBaseUrl),
   REPORTS_LOCK_ID: z.coerce.bigint().default(7342052205n),
+  FILE_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  FILE_CLEANUP_CRON: z.string().default("0 1 * * *"),
+  FILE_CLEANUP_TZ: z.string().default(defaultFileCleanupTz),
+  FILE_CLEANUP_BATCH_SIZE: z.coerce.number().int().positive().default(200),
   INTERNAL_API_TOKEN: z.string().min(1).default("change_me_internal_token"),
   REPORTS_BASE_DIR: z.string().default(process.env.REPORTS_STORAGE_DIR ?? "/app/storage/reports"),
   SMTP_HOST: z.string().trim().min(1).default("smtp.timeweb.ru"),

@@ -231,6 +231,31 @@ services:
     volumes:
       - backend_storage:/app/storage
 
+  cleanup-worker:
+    build:
+      context: ./backend
+    container_name: poverka-bot-max-cleanup-worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["node", "dist/cleanup-worker.js"]
+    environment:
+      TZ: ${APP_TIMEZONE:-Europe/Moscow}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
+      PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}
+      STORAGE_LOCAL_PATH: ${STORAGE_LOCAL_PATH:-/app/storage}
+      REPORTS_STORAGE_DIR: ${REPORTS_STORAGE_DIR:-/app/storage/reports}
+      REPORTS_BASE_DIR: ${REPORTS_BASE_DIR:-/app/storage/reports}
+      FILE_RETENTION_DAYS: ${FILE_RETENTION_DAYS:-30}
+      FILE_CLEANUP_CRON: ${FILE_CLEANUP_CRON:-0 1 * * *}
+      FILE_CLEANUP_TZ: ${FILE_CLEANUP_TZ:-Europe/Moscow}
+      FILE_CLEANUP_BATCH_SIZE: ${FILE_CLEANUP_BATCH_SIZE:-200}
+    volumes:
+      - backend_storage:/app/storage
+
   report-worker:
     build:
       context: ./backend

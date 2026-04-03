@@ -158,7 +158,20 @@ function formatDateTimeMsk(value) {
   }).format(date);
 }
 
-function UserPanel({ accessToken, canSubmitInitially, submissionWindow }) {
+const AUTH_ERROR_CODES = new Set(["AUTH_INVALID", "AUTH_REQUIRED"]);
+
+function isAuthTokenError(error) {
+  return AUTH_ERROR_CODES.has(String(error?.code || ""));
+}
+
+function buildExpiredMiniappMessage(maxUserId) {
+  const userId = String(maxUserId || "unknown");
+  const dateTime = formatDateTimeMsk(new Date().toISOString());
+  return `Ваша заявка устарела. Закройте miniapp и отправьте команду /start.
+Информация для техподдержки: user_id ${userId} datetime ${dateTime}`;
+}
+
+function UserPanel({ accessToken, canSubmitInitially, submissionWindow, maxUserId }) {
   const [form, setForm] = useState({
     address: "",
     phone: "",
@@ -243,6 +256,10 @@ function UserPanel({ accessToken, canSubmitInitially, submissionWindow }) {
       setSavedNotice("Заявка отправлена в бот. Подтвердите ее с фото или отмените в сообщении.");
       setTimeout(() => closeWebApp(), 250);
     } catch (err) {
+      if (isAuthTokenError(err)) {
+        setError(buildExpiredMiniappMessage(maxUserId));
+        return;
+      }
       if (err.code === "ACTIVE_TOPUP_PENDING") {
         setActiveTopupMessage(err.message || "У вас есть активное пополнение.");
       }
@@ -258,12 +275,16 @@ function UserPanel({ accessToken, canSubmitInitially, submissionWindow }) {
         const availableEquipmentTypes = await loadEquipment();
         await loadLatestPending(availableEquipmentTypes);
       } catch (err) {
+        if (isAuthTokenError(err)) {
+          setError(buildExpiredMiniappMessage(maxUserId));
+          return;
+        }
         setError(err.message || "Не удалось загрузить данные формы");
       }
     }
 
     void run();
-  }, []);
+  }, [maxUserId]);
 
   const equipmentTypeOptions = buildEquipmentTypeOptions(equipmentTypes);
   const isOtherEquipmentTypeSelected = form.equipmentTypeId === OTHER_EQUIPMENT_TYPE_VALUE;
@@ -404,7 +425,7 @@ function UserPanel({ accessToken, canSubmitInitially, submissionWindow }) {
         </button>
       </form>
 
-      {error ? <div className="alert error">{error}</div> : null}
+      {error ? <div className="alert error" style={{ whiteSpace: "pre-line" }}>{error}</div> : null}
       {savedNotice ? <div className="alert info">{savedNotice}</div> : null}
     </div>
   );
@@ -747,6 +768,7 @@ export default function App() {
             accessToken={accessToken}
             canSubmitInitially={canSubmitInitially}
             submissionWindow={submissionWindow}
+            maxUserId={maxUserId}
           />
         )}
       </div>

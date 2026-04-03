@@ -31,7 +31,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   CORS_ORIGINS: z.string().default("http://localhost:5173"),
   JWT_ACCESS_SECRET: z.string().min(32),
-  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
   REFRESH_COOKIE_NAME: z.string().default("max_refresh_token"),
   AUTH_COOKIE_SECURE: z.coerce.boolean().default(false),

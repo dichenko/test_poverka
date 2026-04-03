@@ -192,10 +192,10 @@ export function createArshinReportGenerator(input: CreateArshinReportGeneratorIn
         if (rowNumber === 1) {
           return;
         }
-        row.alignment = { vertical: "top", wrapText: true };
+        row.alignment = { vertical: "top", wrapText: false };
       });
 
-      worksheet.getColumn(12).alignment = { vertical: "top", wrapText: true };
+      worksheet.getColumn(12).alignment = { vertical: "top", wrapText: false };
 
       const tempPath = `${paths.absolutePath}.tmp`;
 

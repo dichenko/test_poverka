@@ -246,6 +246,14 @@ services:
       PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-postgres://maxuser:change_me@db:5432/maxapp}
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost:3000}
+      MINIAPP_PUBLIC_URL: ${MINIAPP_PUBLIC_URL:-http://localhost:5173}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-replace_me_with_very_long_secret_32_chars_min}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-replace_me}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-replace_me}
+      YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-replace_me}
+      YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-replace_me}
+      YOOKASSA_RETURN_URL: ${YOOKASSA_RETURN_URL:-http://localhost:3000}
       STORAGE_LOCAL_PATH: ${STORAGE_LOCAL_PATH:-/app/storage}
       REPORTS_STORAGE_DIR: ${REPORTS_STORAGE_DIR:-/app/storage/reports}
       REPORTS_BASE_DIR: ${REPORTS_BASE_DIR:-/app/storage/reports}

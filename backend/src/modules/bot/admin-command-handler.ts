@@ -695,18 +695,16 @@ async function handleAdminReportByDate(input: {
       return;
     }
 
-    await maxBotClient.sendMessage({
-      userId: input.userIdText,
-      text:
-        `Отчеты за ${reportDateRu}:\n` +
-        `Arshin: ${arshinReport.fileName}\n${resolveGeneratedReportPublicUrl({
-          publicUrl: arshinReport.publicUrl,
-          publicToken: arshinReport.publicToken
-        })}\n\n` +
-        `Balance_Arshin: ${balanceArshinReport.fileName}\n${resolveGeneratedReportPublicUrl({
-          publicUrl: balanceArshinReport.publicUrl,
-          publicToken: balanceArshinReport.publicToken
-        })}`
+    await sendReportFileToAdmin({
+      userIdText: input.userIdText,
+      fileName: arshinReport.fileName,
+      filePath: arshinReport.filePath
+    });
+
+    await sendReportFileToAdmin({
+      userIdText: input.userIdText,
+      fileName: balanceArshinReport.fileName,
+      filePath: balanceArshinReport.filePath
     });
 
     const mailArshin = await sendGeneratedReportToAdminEmails({
@@ -734,7 +732,7 @@ async function handleAdminReportByDate(input: {
     } else if (mailFailed) {
       await maxBotClient.sendMessage({
         userId: input.userIdText,
-        text: "Ссылки на отчеты отправлены, но отправка на почту выполнена с ошибкой."
+        text: "Файлы отчетов отправлены, но отправка на почту выполнена с ошибкой."
       });
     }
 

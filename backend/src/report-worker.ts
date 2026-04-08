@@ -165,7 +165,7 @@ async function handleReportRunCompletion(input: {
         await input.mailRunsRepository.createRun({
           reportDate: input.result.date,
           trigger: "auto-after-report",
-          force: false,
+          force: input.result.trigger === "cron",
           requestedBy: "report-worker"
         });
         autoMailRunEnqueued = true;

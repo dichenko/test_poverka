@@ -712,7 +712,8 @@ async function handleAdminReportByDate(input: {
       reportDate: input.reportDate,
       fileName: arshinReport.fileName,
       filePath: arshinReport.filePath,
-      reportCode: "arshin"
+      reportCode: "arshin",
+      force: true
     });
 
     const mailBalance = await sendGeneratedReportToAdminEmails({
@@ -720,7 +721,8 @@ async function handleAdminReportByDate(input: {
       reportDate: input.reportDate,
       fileName: balanceArshinReport.fileName,
       filePath: balanceArshinReport.filePath,
-      reportCode: "balance_arshin"
+      reportCode: "balance_arshin",
+      force: true
     });
 
     const mailFailed = !mailArshin.ok || !mailBalance.ok;

@@ -1,4 +1,5 @@
 import path from "path";
+import { buildReportPublicUrl } from "./report-public-url";
 
 export interface ReportPaths {
   baseDir: string;
@@ -11,13 +12,10 @@ export interface ReportPaths {
 interface BuildReportPathsInput {
   storageDir: string;
   publicBaseUrl: string;
+  publicToken?: string;
   reportCode: string;
   pathSegments?: string[];
   fileName: string;
-}
-
-function trimTrailingSlashes(value: string) {
-  return value.replace(/\/+$/, "");
 }
 
 export function buildReportPaths(input: BuildReportPathsInput): ReportPaths {
@@ -37,10 +35,14 @@ export function buildReportPaths(input: BuildReportPathsInput): ReportPaths {
     throw new Error(`Unsafe report path outside storage root: ${absolutePath}`);
   }
 
-  const publicPath = [input.reportCode, ...pathSegments, input.fileName]
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-  const publicUrl = `${trimTrailingSlashes(input.publicBaseUrl)}/${publicPath}`;
+  const publicUrl = input.publicToken
+    ? buildReportPublicUrl({
+        publicBaseUrl: input.publicBaseUrl,
+        publicToken: input.publicToken
+      })
+    : `${input.publicBaseUrl.replace(/\/+$/, "")}/${[input.reportCode, ...pathSegments, input.fileName]
+        .map((segment) => encodeURIComponent(segment))
+        .join("/")}`;
 
   return {
     baseDir,

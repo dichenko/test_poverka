@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import { buildReportPaths } from "./report-paths";
+import { generateReportPublicToken } from "./report-public-url";
 import { ReportExecutionLock } from "./report-execution-lock";
 import type { GeneratedReportsRepository } from "./generated-reports.repository";
 import type { OrganizationsBalanceStartOfDaySyncRepository } from "./organizations-balance-start-of-day-sync.repository";
@@ -181,9 +182,11 @@ export class ReportsRunner {
         }
 
         const fileName = report.getFileName(input.date);
+        const publicToken = generateReportPublicToken();
         const plannedPaths = buildReportPaths({
           storageDir: this.input.reportsStorageDir,
           publicBaseUrl: this.input.reportsPublicBaseUrl,
+          publicToken,
           reportCode: report.code,
           fileName
         });
@@ -197,6 +200,7 @@ export class ReportsRunner {
             organizationId: null,
             fileName: plannedPaths.fileName,
             filePath: plannedPaths.absolutePath,
+            publicToken,
             publicUrl: plannedPaths.publicUrl
           });
           pendingSaved = true;
@@ -219,7 +223,8 @@ export class ReportsRunner {
             organizationId: null,
             fileName: result.fileName,
             filePath: result.absolutePath,
-            publicUrl: result.publicUrl,
+            publicToken,
+            publicUrl: plannedPaths.publicUrl,
             rowsCount: result.rowsCount
           });
 
@@ -229,7 +234,7 @@ export class ReportsRunner {
               date: input.date,
               rowsCount: result.rowsCount,
               filePath: result.absolutePath,
-              publicUrl: result.publicUrl
+              publicUrl: plannedPaths.publicUrl
             },
             "Generation finished successfully"
           );
@@ -240,7 +245,7 @@ export class ReportsRunner {
             status: "success",
             fileName: result.fileName,
             absolutePath: result.absolutePath,
-            publicUrl: result.publicUrl,
+            publicUrl: plannedPaths.publicUrl,
             rowsCount: result.rowsCount,
             errorText: null
           });

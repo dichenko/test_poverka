@@ -380,6 +380,7 @@ model GeneratedReport {
   organizationId BigInt?           @map("organization_id")
   fileName   String                @map("file_name")
   filePath   String                @map("file_path")
+  publicToken String               @unique @map("public_token")
   publicUrl  String                @map("public_url")
   status     GeneratedReportStatus @default(PENDING)
   rowsCount  Int                   @default(0) @map("rows_count")

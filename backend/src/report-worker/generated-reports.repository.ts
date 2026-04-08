@@ -47,6 +47,7 @@ export class GeneratedReportsRepository {
     organizationId?: bigint | null;
     fileName: string;
     filePath: string;
+    publicToken: string;
     publicUrl: string;
   }) {
     const startedAt = new Date();
@@ -67,6 +68,7 @@ export class GeneratedReportsRepository {
           organizationId,
           fileName: input.fileName,
           filePath: input.filePath,
+          publicToken: input.publicToken,
           publicUrl: input.publicUrl,
           status: GeneratedReportStatus.PENDING,
           rowsCount: 0,
@@ -85,6 +87,7 @@ export class GeneratedReportsRepository {
         organizationId,
         fileName: input.fileName,
         filePath: input.filePath,
+        publicToken: input.publicToken,
         publicUrl: input.publicUrl,
         status: GeneratedReportStatus.PENDING,
         rowsCount: 0,
@@ -101,6 +104,7 @@ export class GeneratedReportsRepository {
     organizationId?: bigint | null;
     fileName: string;
     filePath: string;
+    publicToken: string;
     publicUrl: string;
     rowsCount: number;
   }) {
@@ -127,6 +131,7 @@ export class GeneratedReportsRepository {
         organizationId,
         fileName: input.fileName,
         filePath: input.filePath,
+        publicToken: input.publicToken,
         publicUrl: input.publicUrl,
         status: GeneratedReportStatus.SUCCESS,
         rowsCount: input.rowsCount,

@@ -1,4 +1,6 @@
 import { GeneratedReportStatus, type PrismaClient } from "@prisma/client";
+import { env } from "../config/env";
+import { buildReportPublicUrl } from "../report-worker/report-public-url";
 
 function toDateOnly(value: string) {
   return new Date(`${value}T00:00:00.000Z`);
@@ -16,6 +18,16 @@ export interface StoredReportFile {
 
 function fromDbDate(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+function resolveStoredPublicUrl(input: { publicUrl: string; publicToken?: string | null }) {
+  if (input.publicToken) {
+    return buildReportPublicUrl({
+      publicBaseUrl: env.REPORTS_PUBLIC_BASE_URL,
+      publicToken: input.publicToken
+    });
+  }
+  return input.publicUrl;
 }
 
 export class ReportFilesRepository {
@@ -37,7 +49,10 @@ export class ReportFilesRepository {
       organizationId: row.organizationId,
       fileName: row.fileName,
       filePath: row.filePath,
-      publicUrl: row.publicUrl
+      publicUrl: resolveStoredPublicUrl({
+        publicUrl: row.publicUrl,
+        publicToken: row.publicToken
+      })
     }));
   }
 
@@ -61,7 +76,10 @@ export class ReportFilesRepository {
       organizationId: row.organizationId,
       fileName: row.fileName,
       filePath: row.filePath,
-      publicUrl: row.publicUrl
+      publicUrl: resolveStoredPublicUrl({
+        publicUrl: row.publicUrl,
+        publicToken: row.publicToken
+      })
     } satisfies StoredReportFile;
   }
 
@@ -85,7 +103,10 @@ export class ReportFilesRepository {
       organizationId: row.organizationId,
       fileName: row.fileName,
       filePath: row.filePath,
-      publicUrl: row.publicUrl
+      publicUrl: resolveStoredPublicUrl({
+        publicUrl: row.publicUrl,
+        publicToken: row.publicToken
+      })
     } satisfies StoredReportFile;
   }
 }

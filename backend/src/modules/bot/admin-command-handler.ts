@@ -4,6 +4,7 @@ import { logger } from "../../common/logger";
 import { prisma } from "../../common/prisma";
 import { env } from "../../config/env";
 import { assertValidReportDate, resolveReportDate } from "../../report-worker/date.utils";
+import { buildReportPublicUrl } from "../../report-worker/report-public-url";
 import { createReportMailService } from "../../report-mail/create-report-mail-service";
 import { logAuditEvent } from "../../services/audit.service";
 import { MAX_ADMIN_HELP_TEXT } from "./admin-help-text";
@@ -109,6 +110,16 @@ function formatIsoReportDateToRu(value: string): string {
     return value;
   }
   return `${day}/${month}/${year}`;
+}
+
+function resolveGeneratedReportPublicUrl(input: { publicUrl: string; publicToken?: string | null }) {
+  if (input.publicToken) {
+    return buildReportPublicUrl({
+      publicBaseUrl: env.REPORTS_PUBLIC_BASE_URL,
+      publicToken: input.publicToken
+    });
+  }
+  return input.publicUrl;
 }
 
 async function writeAdminActionLog(input: {
@@ -451,8 +462,28 @@ async function runReportByCode(reportCode: "arshin" | "balance_arshin") {
     reportDate,
     fileName: generated.fileName,
     filePath: generated.filePath,
-    publicUrl: generated.publicUrl
+    publicUrl: resolveGeneratedReportPublicUrl({
+      publicUrl: generated.publicUrl,
+      publicToken: generated.publicToken
+    })
   };
+}
+
+async function sendReportFileToAdmin(input: {
+  userIdText: string;
+  fileName: string;
+  filePath: string;
+}) {
+  const sent = await maxBotClient.sendFileMessage({
+    userId: input.userIdText,
+    fileName: input.fileName,
+    filePath: input.filePath,
+    text: `Файл отчета: ${input.fileName}`
+  });
+
+  if (!sent.ok) {
+    throw new Error("REPORT_FILE_SEND_FAILED");
+  }
 }
 
 async function sendGeneratedReportToAdminEmails(input: {
@@ -526,9 +557,10 @@ async function handleAdminReport(input: {
       userId: input.userIdText,
       text: input.doneText
     });
-    await maxBotClient.sendMessage({
-      userId: input.userIdText,
-      text: `Файл отчета: ${report.fileName}\n${report.publicUrl}`
+    await sendReportFileToAdmin({
+      userIdText: input.userIdText,
+      fileName: report.fileName,
+      filePath: report.filePath
     });
 
     const mailResult = await sendGeneratedReportToAdminEmails({
@@ -667,8 +699,14 @@ async function handleAdminReportByDate(input: {
       userId: input.userIdText,
       text:
         `Отчеты за ${reportDateRu}:\n` +
-        `Arshin: ${arshinReport.fileName}\n${arshinReport.publicUrl}\n\n` +
-        `Balance_Arshin: ${balanceArshinReport.fileName}\n${balanceArshinReport.publicUrl}`
+        `Arshin: ${arshinReport.fileName}\n${resolveGeneratedReportPublicUrl({
+          publicUrl: arshinReport.publicUrl,
+          publicToken: arshinReport.publicToken
+        })}\n\n` +
+        `Balance_Arshin: ${balanceArshinReport.fileName}\n${resolveGeneratedReportPublicUrl({
+          publicUrl: balanceArshinReport.publicUrl,
+          publicToken: balanceArshinReport.publicToken
+        })}`
     });
 
     const mailArshin = await sendGeneratedReportToAdminEmails({
@@ -708,9 +746,15 @@ async function handleAdminReportByDate(input: {
       meta: {
         report_date: input.reportDate,
         arshin_file_name: arshinReport.fileName,
-        arshin_public_url: arshinReport.publicUrl,
+        arshin_public_url: resolveGeneratedReportPublicUrl({
+          publicUrl: arshinReport.publicUrl,
+          publicToken: arshinReport.publicToken
+        }),
         balance_file_name: balanceArshinReport.fileName,
-        balance_public_url: balanceArshinReport.publicUrl,
+        balance_public_url: resolveGeneratedReportPublicUrl({
+          publicUrl: balanceArshinReport.publicUrl,
+          publicToken: balanceArshinReport.publicToken
+        }),
         arshin_mail_sent: mailArshin.ok ? mailArshin.sentCount : 0,
         arshin_mail_failed: mailArshin.ok ? mailArshin.failedCount : null,
         arshin_mail_error: mailArshin.ok ? null : mailArshin.errorText,

@@ -1,4 +1,6 @@
-﻿import { env } from "../../config/env";
+import fs from "fs/promises";
+import path from "path";
+import { env } from "../../config/env";
 import { logger } from "../../common/logger";
 
 interface SendMessagePayload {
@@ -13,6 +15,14 @@ interface SendMessageResult {
   ok: boolean;
   status?: number;
   body?: string;
+}
+
+interface SendFileMessagePayload {
+  userId: string;
+  filePath: string;
+  fileName?: string;
+  text?: string;
+  format?: "markdown" | "html";
 }
 
 interface GetMessageResult {
@@ -43,12 +53,114 @@ interface SetMyCommandsResult {
 }
 
 const MAX_PLATFORM_API_BASE_URL = "https://platform-api.max.ru";
+const ATTACHMENT_NOT_READY_CODE = "attachment.not.ready";
+const FILE_ATTACHMENT_SEND_RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isAttachmentNotReadyError(bodyRaw: string | undefined) {
+  if (!bodyRaw) {
+    return false;
+  }
+
+  if (bodyRaw.includes(ATTACHMENT_NOT_READY_CODE)) {
+    return true;
+  }
+
+  try {
+    const parsed = JSON.parse(bodyRaw) as { code?: string };
+    return parsed.code === ATTACHMENT_NOT_READY_CODE;
+  } catch {
+    return false;
+  }
+}
 
 export class MaxBotClient {
-  async sendMessage(payload: SendMessagePayload): Promise<SendMessageResult> {
+  private async sendMessageRequest(input: { userId: string; body: Record<string, unknown> }): Promise<SendMessageResult> {
     const endpoint = new URL("/messages", env.MAX_BOT_API_BASE_URL);
-    endpoint.searchParams.set("user_id", payload.userId);
+    endpoint.searchParams.set("user_id", input.userId);
 
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: env.MAX_BOT_TOKEN,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(input.body)
+    });
+
+    if (!response.ok) {
+      const responseBody = await response.text();
+      logger.error(
+        { status: response.status, body: responseBody, userId: input.userId, endpoint: endpoint.toString() },
+        "Failed to send MAX message"
+      );
+      return { ok: false, status: response.status, body: responseBody };
+    }
+
+    return { ok: true, status: response.status };
+  }
+
+  private async requestUploadUrl(uploadType: "file") {
+    const endpoint = new URL("/uploads", env.MAX_BOT_API_BASE_URL);
+    endpoint.searchParams.set("type", uploadType);
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: env.MAX_BOT_TOKEN
+      }
+    });
+
+    if (!response.ok) {
+      const responseBody = await response.text();
+      logger.error(
+        { status: response.status, body: responseBody, endpoint: endpoint.toString(), uploadType },
+        "Failed to request MAX upload URL"
+      );
+      return null;
+    }
+
+    const body = (await response.json().catch(() => null)) as { url?: string } | null;
+    if (!body?.url) {
+      logger.error({ endpoint: endpoint.toString(), uploadType }, "MAX upload URL response does not contain url");
+      return null;
+    }
+
+    return body.url;
+  }
+
+  private async uploadFileByUrl(input: { uploadUrl: string; filePath: string; fileName: string }) {
+    const buffer = await fs.readFile(input.filePath);
+    const form = new FormData();
+    form.append("data", new Blob([buffer], { type: "application/octet-stream" }), input.fileName);
+
+    const response = await fetch(input.uploadUrl, {
+      method: "POST",
+      body: form
+    });
+
+    if (!response.ok) {
+      const responseBody = await response.text();
+      logger.error(
+        { status: response.status, body: responseBody, uploadUrl: input.uploadUrl, fileName: input.fileName },
+        "Failed to upload file to MAX media storage"
+      );
+      return null;
+    }
+
+    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!payload || typeof payload !== "object") {
+      logger.error({ uploadUrl: input.uploadUrl, fileName: input.fileName }, "Invalid MAX upload payload");
+      return null;
+    }
+
+    return payload;
+  }
+
+  async sendMessage(payload: SendMessagePayload): Promise<SendMessageResult> {
     const text = payload.miniappUrl ? `${payload.text}\n\n${payload.miniappUrl}` : payload.text;
     const body = {
       text,
@@ -57,26 +169,79 @@ export class MaxBotClient {
     };
 
     try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: env.MAX_BOT_TOKEN,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
+      return await this.sendMessageRequest({
+        userId: payload.userId,
+        body
       });
-
-      if (!response.ok) {
-        const responseBody = await response.text();
-        logger.error(
-          { status: response.status, body: responseBody, userId: payload.userId, endpoint: endpoint.toString() },
-          "Failed to send MAX message"
-        );
-        return { ok: false, status: response.status, body: responseBody };
-      }
-      return { ok: true, status: response.status };
     } catch (error) {
+      const endpoint = new URL("/messages", env.MAX_BOT_API_BASE_URL);
       logger.error({ err: error, userId: payload.userId, endpoint: endpoint.toString() }, "MAX sendMessage failed");
+      return { ok: false };
+    }
+  }
+
+  async sendFileMessage(payload: SendFileMessagePayload): Promise<SendMessageResult> {
+    const fileName = (payload.fileName ?? path.basename(payload.filePath)).trim();
+    if (!fileName) {
+      logger.error({ filePath: payload.filePath }, "Cannot send file to MAX: empty fileName");
+      return { ok: false };
+    }
+
+    try {
+      const uploadUrl = await this.requestUploadUrl("file");
+      if (!uploadUrl) {
+        return { ok: false };
+      }
+
+      const filePayload = await this.uploadFileByUrl({
+        uploadUrl,
+        filePath: payload.filePath,
+        fileName
+      });
+      if (!filePayload) {
+        return { ok: false };
+      }
+
+      const body = {
+        text: payload.text,
+        attachments: [
+          {
+            type: "file",
+            payload: filePayload
+          }
+        ],
+        format: payload.format
+      };
+
+      for (let attempt = 0; attempt < FILE_ATTACHMENT_SEND_RETRY_DELAYS_MS.length + 1; attempt += 1) {
+        const sent = await this.sendMessageRequest({
+          userId: payload.userId,
+          body
+        });
+
+        if (sent.ok) {
+          return sent;
+        }
+
+        const retryDelayMs = FILE_ATTACHMENT_SEND_RETRY_DELAYS_MS[attempt];
+        const isRetryable = isAttachmentNotReadyError(sent.body);
+        if (!isRetryable || retryDelayMs === undefined) {
+          return sent;
+        }
+
+        await sleep(retryDelayMs);
+      }
+
+      return { ok: false };
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          userId: payload.userId,
+          filePath: payload.filePath
+        },
+        "MAX sendFileMessage failed"
+      );
       return { ok: false };
     }
   }

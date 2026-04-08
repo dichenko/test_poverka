@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import ExcelJS from "exceljs";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { buildReportPaths } from "./report-paths";
+import { generateReportPublicToken } from "./report-public-url";
 import type {
   GeneratedReportResult,
   ReportBatchGenerateInput,
@@ -377,9 +378,11 @@ export function createOrgMetrologReportGenerator(
         const organizationId = organization.id.toString();
         const organizationName = organization.name?.trim() ?? "";
         const fileName = `Otchet_metrolog_${organizationId}_${formatDateForFileName(batchInput.reportDate)}.xlsx`;
+        const publicToken = generateReportPublicToken();
         const plannedPaths = buildReportPaths({
           storageDir: input.reportsStorageDir,
           publicBaseUrl: input.reportsPublicBaseUrl,
+          publicToken,
           reportCode: REPORT_CODE,
           pathSegments: [organizationId],
           fileName
@@ -394,6 +397,7 @@ export function createOrgMetrologReportGenerator(
             organizationId: organization.id,
             fileName: plannedPaths.fileName,
             filePath: plannedPaths.absolutePath,
+            publicToken,
             publicUrl: plannedPaths.publicUrl
           });
           pendingSaved = true;
@@ -499,6 +503,7 @@ export function createOrgMetrologReportGenerator(
             organizationId: organization.id,
             fileName,
             filePath: plannedPaths.absolutePath,
+            publicToken,
             publicUrl: plannedPaths.publicUrl,
             rowsCount: rows.length
           });

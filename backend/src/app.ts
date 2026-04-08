@@ -16,11 +16,45 @@ import { notFoundHandler, errorHandler } from "./middlewares/error-handler";
 import { adminRoutes } from "./modules/admin/admin.routes";
 import { paymentsRoutes } from "./modules/payments/payments.routes";
 import { reportMailRoutes } from "./modules/report-mail/report-mail.routes";
+import { reportPublicRoutes } from "./modules/report-public/report-public.routes";
+import {
+  extractPathnameFromPublicBaseUrl,
+  normalizePublicRoutePath
+} from "./report-worker/report-public-url";
 
 function getAllowedOrigins() {
   return env.CORS_ORIGINS.split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function getReportPublicRoutePaths() {
+  const paths = new Set<string>();
+
+  const reportsBasePath = normalizePublicRoutePath(extractPathnameFromPublicBaseUrl(env.REPORTS_PUBLIC_BASE_URL));
+  if (reportsBasePath !== "/") {
+    paths.add(reportsBasePath);
+  }
+
+  const uploadsReportsPath = normalizePublicRoutePath(
+    `${extractPathnameFromPublicBaseUrl(env.PUBLIC_FILES_BASE_URL).replace(/\/+$/, "")}/reports`
+  );
+  if (uploadsReportsPath !== "/") {
+    paths.add(uploadsReportsPath);
+  }
+
+  paths.add("/public/reports");
+  paths.add("/uploads/reports");
+
+  return Array.from(paths);
+}
+
+function denyDirectReportsAccess(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const normalizedPath = req.path.replace(/\\/g, "/");
+  if (normalizedPath === "/reports" || normalizedPath.startsWith("/reports/")) {
+    return res.status(404).end();
+  }
+  return next();
 }
 
 export function createApp() {
@@ -56,9 +90,12 @@ export function createApp() {
   app.use(cookieParser());
   app.use(defaultRateLimit);
 
-  app.use("/public/reports", express.static(path.resolve(env.REPORTS_STORAGE_DIR)));
-  app.use("/static", express.static(path.resolve(env.STORAGE_LOCAL_PATH)));
-  app.use("/uploads", express.static(path.resolve(env.STORAGE_LOCAL_PATH)));
+  for (const routePath of getReportPublicRoutePaths()) {
+    app.use(routePath, reportPublicRoutes);
+  }
+
+  app.use("/static", denyDirectReportsAccess, express.static(path.resolve(env.STORAGE_LOCAL_PATH)));
+  app.use("/uploads", denyDirectReportsAccess, express.static(path.resolve(env.STORAGE_LOCAL_PATH)));
   app.use(healthRoutes);
   app.use("/api", authRoutes);
   app.use("/api", submissionsRoutes);

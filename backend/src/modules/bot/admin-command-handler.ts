@@ -1,3 +1,4 @@
+import fs from "fs/promises";
 import { AuditEntityType, UserRole } from "@prisma/client";
 import type { Request } from "express";
 import { logger } from "../../common/logger";
@@ -20,9 +21,21 @@ const ADD_ADMIN_FORMAT_ERROR_TEXT =
   "Неверный формат команды.\nИспользуй: /add_admin [max_user_id]\nПример: /add_admin 382159692";
 const REPORT_DATA_FORMAT_ERROR_TEXT =
   "Неверный формат команды.\nИспользуй: /report_data DD/MM/YYYY\nПример: /report_data 01/04/2026";
+const REPORT_ALL_ORG_FORMAT_ERROR_TEXT =
+  "Неверный формат команды.\nИспользуй: /report_all_org DD/MM/YYYY\nПример: /report_all_org 01/04/2026";
+const REPORT_ID_ORG_FORMAT_ERROR_TEXT =
+  "Неверный формат команды.\nИспользуй: /report_id_org [id] DD/MM/YYYY\nПример: /report_id_org 12 01/04/2026";
 const INVALID_AMOUNT_TEXT = "Сумма должна быть положительным числом.";
 
-type AdminCommand = "/add" | "/withdraw" | "/add_admin" | "/report_admin" | "/report_buh" | "/report_data";
+type AdminCommand =
+  | "/add"
+  | "/withdraw"
+  | "/add_admin"
+  | "/report_admin"
+  | "/report_buh"
+  | "/report_data"
+  | "/report_all_org"
+  | "/report_id_org";
 const { service: reportMailService } = createReportMailService({ prisma, logger });
 
 function normalizeText(value: string) {
@@ -80,7 +93,9 @@ const adminCommandTokens = new Set<AdminCommand>([
   "/add_admin",
   "/report_admin",
   "/report_buh",
-  "/report_data"
+  "/report_data",
+  "/report_all_org",
+  "/report_id_org"
 ]);
 
 export function isAdminCommandText(text: string) {
@@ -646,6 +661,392 @@ async function findAdminReportsByDate(reportDate: string) {
   };
 }
 
+async function isLocalReportFileAvailable(filePath: string) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function findOrganizationReportsByDate(reportDate: string) {
+  const reports = await prisma.generatedReport.findMany({
+    where: {
+      reportDate: new Date(`${reportDate}T00:00:00.000Z`),
+      reportCode: "org_metrolog",
+      status: "SUCCESS",
+      organizationId: {
+        not: null
+      }
+    },
+    orderBy: [
+      { organizationId: "asc" },
+      { finishedAt: "desc" }
+    ]
+  });
+
+  const byOrganizationId = new Map<string, (typeof reports)[number]>();
+  for (const report of reports) {
+    if (!report.organizationId) {
+      continue;
+    }
+    const key = report.organizationId.toString();
+    if (!byOrganizationId.has(key)) {
+      byOrganizationId.set(key, report);
+    }
+  }
+
+  return Array.from(byOrganizationId.values());
+}
+
+async function findOrganizationReportByIdAndDate(input: { organizationId: bigint; reportDate: string }) {
+  return prisma.generatedReport.findFirst({
+    where: {
+      reportDate: new Date(`${input.reportDate}T00:00:00.000Z`),
+      reportCode: "org_metrolog",
+      status: "SUCCESS",
+      organizationId: input.organizationId
+    },
+    orderBy: { finishedAt: "desc" }
+  });
+}
+
+async function sendGeneratedReportToOrganizationEmails(input: {
+  adminUserId: bigint;
+  reportDate: string;
+  fileName: string;
+  filePath: string;
+  organizationId: bigint;
+  force?: boolean;
+}) {
+  try {
+    const mailResult = await reportMailService.sendOne({
+      reportDate: input.reportDate,
+      fileName: input.fileName,
+      filePath: input.filePath,
+      force: input.force ?? false,
+      requestedBy: `max-bot-admin:${input.adminUserId.toString()}`
+    });
+
+    logger.info(
+      {
+        reportCode: "org_metrolog",
+        organizationId: input.organizationId.toString(),
+        reportDate: input.reportDate,
+        fileName: input.fileName,
+        runId: mailResult.runId.toString(),
+        totalDeliveries: mailResult.totalDeliveries,
+        sentCount: mailResult.sentCount,
+        failedCount: mailResult.failedCount
+      },
+      "Organization report email run completed"
+    );
+
+    return {
+      ok: true as const,
+      ...mailResult
+    };
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        reportCode: "org_metrolog",
+        organizationId: input.organizationId.toString(),
+        reportDate: input.reportDate,
+        fileName: input.fileName
+      },
+      "Failed to send organization report to email recipient"
+    );
+
+    return {
+      ok: false as const,
+      errorText: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+async function handleAdminOrganizationsReportByDate(input: {
+  adminUserId: bigint;
+  userIdText: string;
+  req: Request;
+  reportDate: string;
+}) {
+  const reportDateRu = formatIsoReportDateToRu(input.reportDate);
+
+  await maxBotClient.sendMessage({
+    userId: input.userIdText,
+    text: `Ищу готовые отчеты организаций за ${reportDateRu}...`
+  });
+
+  try {
+    const reports = await findOrganizationReportsByDate(input.reportDate);
+    if (!reports.length) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: `Готовые отчеты организаций за ${reportDateRu} не найдены.`
+      });
+
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "report_all_org",
+        success: false,
+        req: input.req,
+        meta: {
+          report_date: input.reportDate
+        },
+        errorText: "REPORT_FILES_NOT_FOUND"
+      });
+      return;
+    }
+
+    let sentOrganizationsCount = 0;
+    const missingLocalFileOrgIds: string[] = [];
+    const notSentOrgIds: string[] = [];
+    const failedOrgIds: string[] = [];
+
+    for (const report of reports) {
+      if (!report.organizationId) {
+        continue;
+      }
+
+      const orgIdText = report.organizationId.toString();
+      const fileAvailable = await isLocalReportFileAvailable(report.filePath);
+      if (!fileAvailable) {
+        missingLocalFileOrgIds.push(orgIdText);
+        continue;
+      }
+
+      const mailResult = await sendGeneratedReportToOrganizationEmails({
+        adminUserId: input.adminUserId,
+        reportDate: input.reportDate,
+        fileName: report.fileName,
+        filePath: report.filePath,
+        organizationId: report.organizationId,
+        force: true
+      });
+
+      if (!mailResult.ok) {
+        failedOrgIds.push(orgIdText);
+        continue;
+      }
+
+      if (mailResult.sentCount > 0) {
+        sentOrganizationsCount += 1;
+      } else {
+        notSentOrgIds.push(orgIdText);
+      }
+    }
+
+    const summaryLines = [
+      `Рассылка отчетов организаций за ${reportDateRu} завершена.`,
+      `Найдено отчетов: ${reports.length}.`,
+      `Отправлено: ${sentOrganizationsCount}.`,
+      `Нет локального файла: ${missingLocalFileOrgIds.length}.`,
+      `Не отправлено: ${notSentOrgIds.length}.`,
+      `Ошибки отправки: ${failedOrgIds.length}.`
+    ];
+
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: summaryLines.join("\n")
+    });
+
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "report_all_org",
+      success: true,
+      req: input.req,
+      meta: {
+        report_date: input.reportDate,
+        found_reports: reports.length,
+        sent_organizations: sentOrganizationsCount,
+        missing_local_file_count: missingLocalFileOrgIds.length,
+        missing_local_file_org_ids: missingLocalFileOrgIds.slice(0, 50),
+        not_sent_count: notSentOrgIds.length,
+        not_sent_org_ids: notSentOrgIds.slice(0, 50),
+        failed_count: failedOrgIds.length,
+        failed_org_ids: failedOrgIds.slice(0, 50)
+      }
+    });
+  } catch (error) {
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: "Не удалось обработать команду /report_all_org. Попробуй позже."
+    });
+
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "report_all_org",
+      success: false,
+      req: input.req,
+      meta: {
+        report_date: input.reportDate
+      },
+      errorText: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+async function handleAdminOrganizationReportById(input: {
+  adminUserId: bigint;
+  userIdText: string;
+  req: Request;
+  organizationId: bigint;
+  reportDate: string;
+}) {
+  const reportDateRu = formatIsoReportDateToRu(input.reportDate);
+  const organizationIdText = input.organizationId.toString();
+
+  await maxBotClient.sendMessage({
+    userId: input.userIdText,
+    text: `Ищу готовый отчет организации ${organizationIdText} за ${reportDateRu}...`
+  });
+
+  try {
+    const report = await findOrganizationReportByIdAndDate({
+      organizationId: input.organizationId,
+      reportDate: input.reportDate
+    });
+
+    if (!report) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: `Готовый отчет организации ${organizationIdText} за ${reportDateRu} не найден.`
+      });
+
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "report_id_org",
+        success: false,
+        req: input.req,
+        meta: {
+          organization_id: organizationIdText,
+          report_date: input.reportDate
+        },
+        errorText: "REPORT_FILE_NOT_FOUND"
+      });
+      return;
+    }
+
+    const fileAvailable = await isLocalReportFileAvailable(report.filePath);
+    if (!fileAvailable) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: `Файл отчета организации ${organizationIdText} за ${reportDateRu} не найден локально.`
+      });
+
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "report_id_org",
+        success: false,
+        req: input.req,
+        meta: {
+          organization_id: organizationIdText,
+          report_date: input.reportDate,
+          file_name: report.fileName,
+          file_path: report.filePath
+        },
+        errorText: "REPORT_FILE_MISSING_LOCAL"
+      });
+      return;
+    }
+
+    const mailResult = await sendGeneratedReportToOrganizationEmails({
+      adminUserId: input.adminUserId,
+      reportDate: input.reportDate,
+      fileName: report.fileName,
+      filePath: report.filePath,
+      organizationId: input.organizationId,
+      force: true
+    });
+
+    if (mailResult.ok && mailResult.sentCount > 0) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: `Отчет организации ${organizationIdText} за ${reportDateRu} отправлен на почту.`
+      });
+
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "report_id_org",
+        success: true,
+        req: input.req,
+        meta: {
+          organization_id: organizationIdText,
+          report_date: input.reportDate,
+          file_name: report.fileName,
+          sent_count: mailResult.sentCount,
+          failed_count: mailResult.failedCount
+        }
+      });
+      return;
+    }
+
+    if (mailResult.ok) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text:
+          `Файл отчета организации ${organizationIdText} за ${reportDateRu} найден, ` +
+          "но письмо не отправлено. Проверь email организации."
+      });
+
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "report_id_org",
+        success: false,
+        req: input.req,
+        meta: {
+          organization_id: organizationIdText,
+          report_date: input.reportDate,
+          file_name: report.fileName,
+          sent_count: mailResult.sentCount,
+          failed_count: mailResult.failedCount
+        },
+        errorText: "REPORT_EMAIL_NOT_SENT"
+      });
+      return;
+    }
+
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text:
+        `Файл отчета организации ${organizationIdText} за ${reportDateRu} найден, ` +
+        "но отправка на почту завершилась ошибкой."
+    });
+
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "report_id_org",
+      success: false,
+      req: input.req,
+      meta: {
+        organization_id: organizationIdText,
+        report_date: input.reportDate,
+        file_name: report.fileName
+      },
+      errorText: mailResult.errorText
+    });
+  } catch (error) {
+    await maxBotClient.sendMessage({
+      userId: input.userIdText,
+      text: "Не удалось обработать команду /report_id_org. Попробуй позже."
+    });
+
+    await writeAdminActionLog({
+      adminUserId: input.adminUserId,
+      command: "report_id_org",
+      success: false,
+      req: input.req,
+      meta: {
+        organization_id: organizationIdText,
+        report_date: input.reportDate
+      },
+      errorText: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
 async function handleAdminReportByDate(input: {
   adminUserId: bigint;
   userIdText: string;
@@ -951,6 +1352,67 @@ export async function handleAdminCommand(input: {
       adminUserId: input.adminUserId,
       userIdText: input.userIdText,
       req: input.req,
+      reportDate
+    });
+    return;
+  }
+
+  if (command === "/report_all_org") {
+    const reportDate = arg1 ? parseReportDateInput(arg1) : null;
+    if (!reportDate || parseTokens(normalizedText).length !== 2) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: REPORT_ALL_ORG_FORMAT_ERROR_TEXT
+      });
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "report_all_org",
+        success: false,
+        req: input.req,
+        meta: {
+          raw_text: normalizedText
+        },
+        errorText: "INVALID_FORMAT"
+      });
+      return;
+    }
+
+    await handleAdminOrganizationsReportByDate({
+      adminUserId: input.adminUserId,
+      userIdText: input.userIdText,
+      req: input.req,
+      reportDate
+    });
+    return;
+  }
+
+  if (command === "/report_id_org") {
+    const organizationId = arg1 ? parsePositiveInt(arg1) : null;
+    const reportDate = arg2 ? parseReportDateInput(arg2) : null;
+
+    if (!organizationId || !reportDate || parseTokens(normalizedText).length !== 3) {
+      await maxBotClient.sendMessage({
+        userId: input.userIdText,
+        text: REPORT_ID_ORG_FORMAT_ERROR_TEXT
+      });
+      await writeAdminActionLog({
+        adminUserId: input.adminUserId,
+        command: "report_id_org",
+        success: false,
+        req: input.req,
+        meta: {
+          raw_text: normalizedText
+        },
+        errorText: "INVALID_FORMAT"
+      });
+      return;
+    }
+
+    await handleAdminOrganizationReportById({
+      adminUserId: input.adminUserId,
+      userIdText: input.userIdText,
+      req: input.req,
+      organizationId,
       reportDate
     });
     return;

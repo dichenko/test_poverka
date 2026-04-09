@@ -1088,7 +1088,8 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: photoSavedAndConfirmedMessage(),
-        attachments: confirmedStatusHistoryId ? createActTestKeyboard(confirmedStatusHistoryId) : undefined
+        // TEMP OFF: enable this line when test act button must be visible to users.
+        // attachments: confirmedStatusHistoryId ? createActTestKeyboard(confirmedStatusHistoryId) : undefined
       });
 
       await sendProfileMessage(numericUserId, event.userId);

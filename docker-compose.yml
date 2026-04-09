@@ -11,7 +11,7 @@ services:
       TZ: ${APP_TIMEZONE:-Europe/Moscow}
       PGTZ: ${APP_TIMEZONE:-Europe/Moscow}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "${DB_BIND_ADDRESS:-127.0.0.1}:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maxuser} -d ${POSTGRES_DB:-maxapp}"]
       interval: 10s

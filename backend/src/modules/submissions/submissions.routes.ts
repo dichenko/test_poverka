@@ -267,11 +267,12 @@ router.post("/submissions/:id/confirm", requireSubmissionWindow, validate(confir
   try {
     await assertNoActiveTopupForUser(req.auth!.userId);
     const params = confirmSubmissionParamsSchema.parse(req.params);
-    const submission = await confirmSubmission({
+    const confirmed = await confirmSubmission({
       submissionId: params.id,
       actorUserId: req.auth!.userId,
       actorRole: req.auth!.role
     });
+    const submission = confirmed.submission;
 
     await logAuditEvent({
       actorUserId: req.auth!.userId,

@@ -186,7 +186,10 @@ export async function confirmSubmission(input: {
   }
 
   if (current.status === SubmissionStatus.CONFIRMED) {
-    return current;
+    return {
+      submission: current,
+      confirmedStatusHistoryId: null
+    };
   }
 
   if (current.status !== SubmissionStatus.PENDING_CONFIRMATION && input.actorRole !== "ADMIN") {
@@ -200,7 +203,10 @@ export async function confirmSubmission(input: {
     }
 
     if (submission.status === SubmissionStatus.CONFIRMED) {
-      return submission;
+      return {
+        submission,
+        confirmedStatusHistoryId: null
+      };
     }
 
     if (submission.status !== SubmissionStatus.PENDING_CONFIRMATION) {
@@ -225,7 +231,10 @@ export async function confirmSubmission(input: {
       if (!latest) {
         throw new AppError("Submission not found.", 404, "SUBMISSION_NOT_FOUND");
       }
-      return latest;
+      return {
+        submission: latest,
+        confirmedStatusHistoryId: null
+      };
     }
 
     const orgRows = await tx.$queryRaw<
@@ -274,7 +283,7 @@ export async function confirmSubmission(input: {
       }
     });
 
-    await tx.submissionStatusHistory.create({
+    const statusHistory = await tx.submissionStatusHistory.create({
       data: {
         submissionId: submission.id,
         oldStatus: SubmissionStatus.PENDING_CONFIRMATION,
@@ -293,9 +302,14 @@ export async function confirmSubmission(input: {
       }
     });
 
-    return tx.meterSubmission.findUniqueOrThrow({
+    const confirmedSubmission = await tx.meterSubmission.findUniqueOrThrow({
       where: { id: submission.id }
     });
+
+    return {
+      submission: confirmedSubmission,
+      confirmedStatusHistoryId: statusHistory.id
+    };
   });
 }
 

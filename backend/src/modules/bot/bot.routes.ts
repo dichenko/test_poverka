@@ -1,5 +1,5 @@
 import path from "path";
-import { UserRole } from "@prisma/client";
+import { SubmissionStatus, UserRole } from "@prisma/client";
 import { Router } from "express";
 import { AppError } from "../../common/app-error";
 import { logger } from "../../common/logger";
@@ -70,6 +70,8 @@ const RU_NOTIFY_NO_PENDING_FOR_ACTION =
   "\u041d\u0435\u0442 \u0437\u0430\u044f\u0432\u043e\u043a \u0434\u043b\u044f \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044f";
 const RU_NOTIFY_UNKNOWN_ACTION =
   "\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435";
+const ACT_TEST_BUTTON_TEXT = "\u0421\u043e\u0437\u0434\u0430\u0442\u044c \u0430\u043a\u0442 (\u0442\u0435\u0441\u0442\u043e\u0432\u044b\u0439 \u0440\u0435\u0436\u0438\u043c)";
+const ACT_TEST_BOT_START_BASE_URL = "https://max.ru/id164802161000_3_bot?start=";
 const RU_START_DONE_NO_PENDING =
   "\u041a\u043e\u043c\u0430\u043d\u0434\u0430 /start \u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430. \u041d\u0435\u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u043d\u044b\u0445 \u0437\u0430\u044f\u0432\u043e\u043a \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e.";
 const SUBMISSION_WINDOW_CLOSED_TEXT =
@@ -189,6 +191,27 @@ function topupPackagesCancelKeyboard() {
               type: "message",
               text: RU_CANCEL_SHORT,
               payload: TOPUP_CANCEL_CALLBACK_PAYLOAD
+            }
+          ]
+        ]
+      }
+    }
+  ];
+}
+
+function createActTestKeyboard(submissionStatusHistoryId: string) {
+  const actUrl = `${ACT_TEST_BOT_START_BASE_URL}${encodeURIComponent(submissionStatusHistoryId)}`;
+
+  return [
+    {
+      type: "inline_keyboard",
+      payload: {
+        buttons: [
+          [
+            {
+              type: "link",
+              text: ACT_TEST_BUTTON_TEXT,
+              url: actUrl
             }
           ]
         ]
@@ -398,6 +421,32 @@ async function resolveActionSubmissionId(userId: string, explicitSubmissionId: s
   }
   const pending = await getLatestPendingSubmission(userId);
   return pending?.id ?? "";
+}
+
+async function resolveConfirmedStatusHistoryId(input: {
+  submissionId: string;
+  actorUserId: bigint;
+  confirmedStatusHistoryId: string | null;
+}) {
+  if (input.confirmedStatusHistoryId) {
+    return input.confirmedStatusHistoryId;
+  }
+
+  const history = await prisma.submissionStatusHistory.findFirst({
+    where: {
+      submissionId: input.submissionId,
+      newStatus: SubmissionStatus.CONFIRMED,
+      changedByUserId: input.actorUserId
+    },
+    orderBy: {
+      id: "desc"
+    },
+    select: {
+      id: true
+    }
+  });
+
+  return history?.id ?? null;
 }
 
 async function sendProfileMessage(userId: bigint, fallbackUserIdText?: string) {
@@ -970,11 +1019,19 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         }
       });
 
+      let confirmedStatusHistoryId: string | null = null;
+
       try {
-        await confirmSubmission({
+        const confirmed = await confirmSubmission({
           submissionId: awaiting.id,
           actorUserId: event.userId,
           actorRole: "USER"
+        });
+
+        confirmedStatusHistoryId = await resolveConfirmedStatusHistoryId({
+          submissionId: awaiting.id,
+          actorUserId: numericUserId,
+          confirmedStatusHistoryId: confirmed.confirmedStatusHistoryId
         });
       } catch (error) {
         if (error instanceof AppError && error.code === "INSUFFICIENT_BALANCE") {
@@ -1030,7 +1087,8 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
 
       await maxBotClient.sendMessage({
         userId: event.userId,
-        text: photoSavedAndConfirmedMessage()
+        text: photoSavedAndConfirmedMessage(),
+        attachments: confirmedStatusHistoryId ? createActTestKeyboard(confirmedStatusHistoryId) : undefined
       });
 
       await sendProfileMessage(numericUserId, event.userId);

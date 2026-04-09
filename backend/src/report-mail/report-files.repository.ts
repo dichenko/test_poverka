@@ -1,5 +1,4 @@
 import { GeneratedReportStatus, type PrismaClient } from "@prisma/client";
-import { env } from "../config/env";
 import { buildReportPublicUrl } from "../report-worker/report-public-url";
 
 function toDateOnly(value: string) {
@@ -20,10 +19,31 @@ function fromDbDate(value: Date) {
   return value.toISOString().slice(0, 10);
 }
 
+function resolveReportsPublicBaseUrl() {
+  const explicit = process.env.REPORTS_PUBLIC_BASE_URL?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const filesBase = process.env.PUBLIC_FILES_BASE_URL?.trim();
+  if (filesBase) {
+    return `${filesBase.replace(/\/$/, "")}/reports`;
+  }
+
+  const backendBase = process.env.BACKEND_PUBLIC_URL?.trim();
+  if (backendBase) {
+    return `${backendBase.replace(/\/$/, "")}/public/reports`;
+  }
+
+  return null;
+}
+
+const reportsPublicBaseUrl = resolveReportsPublicBaseUrl();
+
 function resolveStoredPublicUrl(input: { publicUrl: string; publicToken?: string | null }) {
-  if (input.publicToken) {
+  if (input.publicToken && reportsPublicBaseUrl) {
     return buildReportPublicUrl({
-      publicBaseUrl: env.REPORTS_PUBLIC_BASE_URL,
+      publicBaseUrl: reportsPublicBaseUrl,
       publicToken: input.publicToken
     });
   }

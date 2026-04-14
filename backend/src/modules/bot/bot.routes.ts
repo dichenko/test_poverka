@@ -1,5 +1,5 @@
 import path from "path";
-import { SubmissionStatus, UserRole } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import { Router } from "express";
 import { AppError } from "../../common/app-error";
 import { logger } from "../../common/logger";
@@ -199,8 +199,8 @@ function topupPackagesCancelKeyboard() {
   ];
 }
 
-function createActTestKeyboard(submissionStatusHistoryId: string) {
-  const actUrl = `${ACT_TEST_BOT_START_BASE_URL}${encodeURIComponent(submissionStatusHistoryId)}`;
+function createActTestKeyboard(submissionId: string) {
+  const actUrl = `${ACT_TEST_BOT_START_BASE_URL}${encodeURIComponent(submissionId)}`;
 
   return [
     {
@@ -421,32 +421,6 @@ async function resolveActionSubmissionId(userId: string, explicitSubmissionId: s
   }
   const pending = await getLatestPendingSubmission(userId);
   return pending?.id ?? "";
-}
-
-async function resolveConfirmedStatusHistoryId(input: {
-  submissionId: string;
-  actorUserId: bigint;
-  confirmedStatusHistoryId: string | null;
-}) {
-  if (input.confirmedStatusHistoryId) {
-    return input.confirmedStatusHistoryId;
-  }
-
-  const history = await prisma.submissionStatusHistory.findFirst({
-    where: {
-      submissionId: input.submissionId,
-      newStatus: SubmissionStatus.CONFIRMED,
-      changedByUserId: input.actorUserId
-    },
-    orderBy: {
-      id: "desc"
-    },
-    select: {
-      id: true
-    }
-  });
-
-  return history?.id ?? null;
 }
 
 async function sendProfileMessage(userId: bigint, fallbackUserIdText?: string) {
@@ -1019,19 +993,11 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
         }
       });
 
-      let confirmedStatusHistoryId: string | null = null;
-
       try {
-        const confirmed = await confirmSubmission({
+        await confirmSubmission({
           submissionId: awaiting.id,
           actorUserId: event.userId,
           actorRole: "USER"
-        });
-
-        confirmedStatusHistoryId = await resolveConfirmedStatusHistoryId({
-          submissionId: awaiting.id,
-          actorUserId: numericUserId,
-          confirmedStatusHistoryId: confirmed.confirmedStatusHistoryId
         });
       } catch (error) {
         if (error instanceof AppError && error.code === "INSUFFICIENT_BALANCE") {
@@ -1088,7 +1054,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: photoSavedAndConfirmedMessage(),
-        attachments: confirmedStatusHistoryId ? createActTestKeyboard(confirmedStatusHistoryId) : undefined
+        attachments: createActTestKeyboard(awaiting.id)
       });
 
       await sendProfileMessage(numericUserId, event.userId);

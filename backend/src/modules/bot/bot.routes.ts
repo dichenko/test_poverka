@@ -200,7 +200,7 @@ function topupPackagesCancelKeyboard() {
 }
 
 function createActTestKeyboard(submissionId: string) {
-  const actUrl = `${ACT_TEST_BOT_START_BASE_URL}${encodeURIComponent(submissionId)}`;
+  const actUrl = `${ACT_TEST_BOT_START_BASE_URL}${submissionId}`;
 
   return [
     {

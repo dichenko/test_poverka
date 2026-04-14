@@ -71,7 +71,7 @@ const RU_NOTIFY_NO_PENDING_FOR_ACTION =
 const RU_NOTIFY_UNKNOWN_ACTION =
   "\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435";
 const ACT_TEST_BUTTON_TEXT = "\u0421\u043e\u0437\u0434\u0430\u0442\u044c \u0430\u043a\u0442 (\u0442\u0435\u0441\u0442\u043e\u0432\u044b\u0439 \u0440\u0435\u0436\u0438\u043c)";
-const ACT_TEST_BOT_START_BASE_URL = "https://max.ru/id164802161000_3_bot?start=";
+const ACT_TEST_BOT_START_BASE_URL = "https://max.ru/id164802161000_5_bot?start=";
 const RU_START_DONE_NO_PENDING =
   "\u041a\u043e\u043c\u0430\u043d\u0434\u0430 /start \u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430. \u041d\u0435\u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u043d\u044b\u0445 \u0437\u0430\u044f\u0432\u043e\u043a \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e.";
 const SUBMISSION_WINDOW_CLOSED_TEXT =
@@ -1088,8 +1088,7 @@ router.post("/webhook/max", authRateLimit, async (req, res, next) => {
       await maxBotClient.sendMessage({
         userId: event.userId,
         text: photoSavedAndConfirmedMessage(),
-        // TEMP OFF: enable this line when test act button must be visible to users.
-        // attachments: confirmedStatusHistoryId ? createActTestKeyboard(confirmedStatusHistoryId) : undefined
+        attachments: confirmedStatusHistoryId ? createActTestKeyboard(confirmedStatusHistoryId) : undefined
       });
 
       await sendProfileMessage(numericUserId, event.userId);

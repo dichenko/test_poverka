@@ -52,8 +52,8 @@ interface SetMyCommandsResult {
   body?: string;
 }
 
-const MAX_PLATFORM_API_BASE_URL = "https://platform-api.max.ru";
 const ATTACHMENT_NOT_READY_CODE = "attachment.not.ready";
+const MAX_API_BASE_URL = "https://platform-api2.max.ru";
 const FILE_ATTACHMENT_SEND_RETRY_DELAYS_MS = [1000, 2000, 4000];
 
 function sleep(ms: number) {
@@ -79,7 +79,7 @@ function isAttachmentNotReadyError(bodyRaw: string | undefined) {
 
 export class MaxBotClient {
   private async sendMessageRequest(input: { userId: string; body: Record<string, unknown> }): Promise<SendMessageResult> {
-    const endpoint = new URL("/messages", env.MAX_BOT_API_BASE_URL);
+    const endpoint = new URL("/messages", MAX_API_BASE_URL);
     endpoint.searchParams.set("user_id", input.userId);
 
     const response = await fetch(endpoint, {
@@ -104,7 +104,7 @@ export class MaxBotClient {
   }
 
   private async requestUploadUrl(uploadType: "file") {
-    const endpoint = new URL("/uploads", env.MAX_BOT_API_BASE_URL);
+    const endpoint = new URL("/uploads", MAX_API_BASE_URL);
     endpoint.searchParams.set("type", uploadType);
 
     const response = await fetch(endpoint, {
@@ -174,7 +174,7 @@ export class MaxBotClient {
         body
       });
     } catch (error) {
-      const endpoint = new URL("/messages", env.MAX_BOT_API_BASE_URL);
+      const endpoint = new URL("/messages", MAX_API_BASE_URL);
       logger.error({ err: error, userId: payload.userId, endpoint: endpoint.toString() }, "MAX sendMessage failed");
       return { ok: false };
     }
@@ -247,7 +247,7 @@ export class MaxBotClient {
   }
 
   async getMessage(mid: string): Promise<GetMessageResult> {
-    const endpoint = new URL(`/messages/${encodeURIComponent(mid)}`, env.MAX_BOT_API_BASE_URL);
+    const endpoint = new URL(`/messages/${encodeURIComponent(mid)}`, MAX_API_BASE_URL);
     try {
       const response = await fetch(endpoint, {
         method: "GET",
@@ -272,7 +272,7 @@ export class MaxBotClient {
   }
 
   async answerCallback(payload: AnswerCallbackPayload) {
-    const endpoint = new URL("/answers", env.MAX_BOT_API_BASE_URL);
+    const endpoint = new URL("/answers", MAX_API_BASE_URL);
     endpoint.searchParams.set("callback_id", payload.callbackId);
 
     try {
@@ -330,23 +330,7 @@ export class MaxBotClient {
       }
     };
 
-    const primaryResult = await setCommandsByBaseUrl(env.MAX_BOT_API_BASE_URL);
-    if (primaryResult.ok) {
-      return primaryResult;
-    }
-
-    const primaryHost = new URL(env.MAX_BOT_API_BASE_URL).host;
-    const fallbackHost = new URL(MAX_PLATFORM_API_BASE_URL).host;
-    if (primaryHost === fallbackHost) {
-      return primaryResult;
-    }
-
-    logger.warn(
-      { primaryBaseUrl: env.MAX_BOT_API_BASE_URL, fallbackBaseUrl: MAX_PLATFORM_API_BASE_URL },
-      "Retrying MAX bot commands sync via platform API base URL"
-    );
-
-    return setCommandsByBaseUrl(MAX_PLATFORM_API_BASE_URL);
+    return setCommandsByBaseUrl(MAX_API_BASE_URL);
   }
 }
 

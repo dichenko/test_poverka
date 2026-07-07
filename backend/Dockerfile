@@ -17,6 +17,17 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache ca-certificates
+COPY certs/russian-trusted/russian_trusted_root_ca.crt /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
+COPY certs/russian-trusted/russian_trusted_sub_ca.crt /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
+RUN update-ca-certificates \
+    && { \
+         for cert in /usr/local/share/ca-certificates/russian_trusted_*.crt; do \
+           cat "$cert"; \
+           printf '\n'; \
+         done; \
+       } > /etc/ssl/certs/russian-trusted-ca-bundle.pem
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/russian-trusted-ca-bundle.pem
 COPY package.json package-lock.json* ./
 COPY prisma.config.ts ./
 RUN npm install --omit=dev

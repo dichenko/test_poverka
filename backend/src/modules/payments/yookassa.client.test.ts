@@ -6,7 +6,6 @@ function ensureEnv() {
   process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "12345678901234567890123456789012";
   process.env.MAX_BOT_TOKEN = process.env.MAX_BOT_TOKEN || "bot_token";
   process.env.MAX_WEBHOOK_SECRET = process.env.MAX_WEBHOOK_SECRET || "webhook_secret";
-  process.env.MAX_BOT_API_BASE_URL = process.env.MAX_BOT_API_BASE_URL || "https://botapi.max.ru";
   process.env.MINIAPP_PUBLIC_URL = process.env.MINIAPP_PUBLIC_URL || "https://miniapp.example.com";
   process.env.BACKEND_PUBLIC_URL = process.env.BACKEND_PUBLIC_URL || "https://api.example.com";
   process.env.YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || "shop";
@@ -71,4 +70,3 @@ describe("yookassa.client url building", () => {
     expect(String(url)).toBe("https://api.yookassa.ru/v3/payments");
   });
 });
-

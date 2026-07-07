@@ -62,7 +62,6 @@ services:
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-replace_me}
       MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-replace_me}
-      MAX_BOT_API_BASE_URL: ${MAX_BOT_API_BASE_URL:-https://botapi.max.ru}
       YOOKASSA_API_BASE_URL: ${YOOKASSA_API_BASE_URL:-https://api.yookassa.ru/v3}
       YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-replace_me}
       YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-replace_me}
@@ -143,7 +142,6 @@ services:
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-replace_me}
       MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-replace_me}
-      MAX_BOT_API_BASE_URL: ${MAX_BOT_API_BASE_URL:-https://botapi.max.ru}
       YOOKASSA_API_BASE_URL: ${YOOKASSA_API_BASE_URL:-https://api.yookassa.ru/v3}
       YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-replace_me}
       YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-replace_me}
@@ -200,7 +198,6 @@ services:
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-replace_me}
       MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-replace_me}
-      MAX_BOT_API_BASE_URL: ${MAX_BOT_API_BASE_URL:-https://botapi.max.ru}
       YOOKASSA_API_BASE_URL: ${YOOKASSA_API_BASE_URL:-https://api.yookassa.ru/v3}
       YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-replace_me}
       YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-replace_me}

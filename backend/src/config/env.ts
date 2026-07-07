@@ -38,7 +38,6 @@ const envSchema = z.object({
   AUTH_COOKIE_SECURE: z.coerce.boolean().default(false),
   MAX_BOT_TOKEN: z.string().min(1),
   MAX_WEBHOOK_SECRET: z.string().min(1),
-  MAX_BOT_API_BASE_URL: z.string().url().default("https://botapi.max.ru"),
   YOOKASSA_API_BASE_URL: z.string().url().default(defaultYookassaApiBaseUrl),
   YOOKASSA_SHOP_ID: z.string().min(1),
   YOOKASSA_SECRET_KEY: z.string().min(1),

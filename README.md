@@ -41,6 +41,14 @@ Time zone for all services is controlled by:
 APP_TIMEZONE=Europe/Moscow
 ```
 
+MAX API requests use a fixed platform endpoint in the backend code:
+
+```bash
+https://platform-api2.max.ru
+```
+
+The backend image includes the public Russian Trusted Root CA and Russian Trusted Sub CA certificates under `backend/certs/russian-trusted/` and passes them to Node.js through `NODE_EXTRA_CA_CERTS`.
+
 ## Local/Server start
 
 ```bash

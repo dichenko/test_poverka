@@ -5,7 +5,7 @@ ARG VITE_DEFAULT_BACKEND_PUBLIC_URL
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_DEFAULT_BACKEND_PUBLIC_URL=${VITE_DEFAULT_BACKEND_PUBLIC_URL}
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm ci --include=dev
 COPY . .
 RUN npm run build
 

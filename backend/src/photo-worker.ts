@@ -107,7 +107,26 @@ async function processOneFile() {
       }
     });
 
-    await fs.rm(originalPath, { force: true });
+    try {
+      await prisma.ocrRecognition.upsert({
+        where: { fileId: file.id },
+        create: {
+          fileId: file.id,
+          originalPath: normalizeStoragePath(path.relative(storageRoot, originalPath)),
+          originalMimeType: file.mimeType,
+          compressedPhotoUrl: publicUrl
+        },
+        update: {
+          originalPath: normalizeStoragePath(path.relative(storageRoot, originalPath)),
+          originalMimeType: file.mimeType,
+          compressedPhotoUrl: publicUrl
+        }
+      });
+    } catch (ocrQueueError) {
+      // OCR is optional: its queue must never prevent a confirmed photo from being processed.
+      logger.error({ err: ocrQueueError, fileId: file.id }, "Failed to enqueue OCR recognition");
+      await fs.rm(originalPath, { force: true });
+    }
     logger.info(
       {
         fileId: file.id,

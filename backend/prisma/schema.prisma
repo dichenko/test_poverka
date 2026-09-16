@@ -68,6 +68,13 @@ enum ReportEmailDeliveryStatus {
   FAILED
 }
 
+enum OcrRecognitionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model Organization {
   id                BigInt  @id @default(autoincrement()) @map("org_id")
   balance           BigInt  @default(0)
@@ -228,10 +235,35 @@ model FileEntity {
 
   ownerUser  User?            @relation(fields: [ownerUserId], references: [id])
   submission MeterSubmission? @relation(fields: [submissionId], references: [id])
+  ocrRecognition OcrRecognition?
 
   @@index([ownerUserId])
   @@index([submissionId])
   @@map("files")
+}
+
+model OcrRecognition {
+  id                 String               @id @default(cuid())
+  fileId             String               @unique @map("file_id")
+  originalPath       String               @map("original_path")
+  originalMimeType   String               @map("original_mime_type")
+  compressedPhotoUrl String               @map("compressed_photo_url")
+  resultJsonUrl      String?              @map("result_json_url")
+  status             OcrRecognitionStatus @default(PENDING)
+  ocrStatus          String?              @map("ocr_status")
+  responsePayload    Json?                @map("response_payload")
+  attemptsCount      Int                  @default(0) @map("attempts_count")
+  nextAttemptAt      DateTime?            @map("next_attempt_at") @db.Timestamptz(3)
+  errorMessage       String?              @map("error_message")
+  startedAt          DateTime?            @map("started_at") @db.Timestamptz(3)
+  finishedAt         DateTime?            @map("finished_at") @db.Timestamptz(3)
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  file FileEntity @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@map("ocr_recognitions")
 }
 
 model SubmissionBillingEvent {

@@ -116,13 +116,15 @@ services:
       retries: 8
       start_period: 30s
 
-  photo-worker:
+  photo-worker: &photo-worker
     build:
       context: ./backend
     container_name: poverka-bot-max-photo-worker
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      backend:
         condition: service_healthy
     command: ["node", "dist/photo-worker.js"]
     environment:
@@ -169,8 +171,19 @@ services:
       PHOTO_ORIGINAL_DIR: ${PHOTO_ORIGINAL_DIR:-/app/storage/photos/original}
       PHOTO_COMPRESSED_DIR: ${PHOTO_COMPRESSED_DIR:-/app/storage/photos/compressed}
       PUBLIC_FILES_BASE_URL: ${PUBLIC_FILES_BASE_URL:-http://localhost:3000/uploads}
+      OCR_API_URL: ${OCR_API_URL:-https://ocr.poverka-bot.ru}
+      OCR_API_KEY: ${OCR_API_KEY:-}
+      OCR_HTTP_TIMEOUT_MS: ${OCR_HTTP_TIMEOUT_MS:-120000}
+      OCR_MAX_RETRIES: ${OCR_MAX_RETRIES:-2}
+      OCR_WORKER_POLL_INTERVAL_MS: ${OCR_WORKER_POLL_INTERVAL_MS:-5000}
+      OCR_RETRY_DELAY_MS: ${OCR_RETRY_DELAY_MS:-5000}
     volumes:
       - backend_storage:/app/storage
+
+  ocr-worker:
+    <<: *photo-worker
+    container_name: poverka-bot-max-ocr-worker
+    command: ["node", "dist/ocr-worker.js"]
 
   payment-worker:
     build:

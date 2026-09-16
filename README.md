@@ -131,6 +131,21 @@ Old MVP URL token auth is removed. Miniapp auth is based on MAX `initData` serve
 
 `photo-worker` is a dedicated background service for image post-processing.
 
+## OCR Worker
+
+`ocr-worker` asynchronously sends each original confirmed photo to the OCR service. Its failures and retries do not affect photo compression or submission processing. A successful OCR HTTP response is stored beside the compressed photo as a public `.json` file.
+
+```env
+OCR_API_URL=https://ocr.poverka-bot.ru
+OCR_API_KEY=server_only_secret
+OCR_HTTP_TIMEOUT_MS=120000
+OCR_MAX_RETRIES=2
+OCR_WORKER_POLL_INTERVAL_MS=5000
+OCR_RETRY_DELAY_MS=5000
+```
+
+Do not commit `OCR_API_KEY`. The original photo is retained only while its OCR task is pending and is deleted after a terminal OCR result; the existing file cleanup also removes OCR sidecar JSON files.
+
 Flow:
 
 1. Polls DB (`files`) every `PHOTO_WORKER_POLL_INTERVAL_MS` (default `5000`).

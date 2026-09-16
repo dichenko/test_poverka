@@ -56,7 +56,12 @@ async function cleanupPhotos(cutoffDate: Date, isShuttingDownRef: { value: boole
       select: {
         id: true,
         storageKey: true,
-        compressedPath: true
+        compressedPath: true,
+        ocrRecognition: {
+          select: {
+            originalPath: true
+          }
+        }
       }
     });
 
@@ -72,9 +77,13 @@ async function cleanupPhotos(cutoffDate: Date, isShuttingDownRef: { value: boole
       stats.scanned += 1;
 
       try {
-        const filePaths = Array.from(
-          new Set([row.storageKey, row.compressedPath].filter((item): item is string => Boolean(item)))
-        );
+        const sidecarPath = row.compressedPath
+          ? path.join(path.dirname(row.compressedPath), `${path.parse(row.compressedPath).name}.json`)
+          : null;
+        const filePaths = Array.from(new Set(
+          [row.storageKey, row.compressedPath, row.ocrRecognition?.originalPath, sidecarPath]
+            .filter((item): item is string => Boolean(item))
+        ));
         for (const storagePath of filePaths) {
           await removePhotoFile(storagePath);
         }

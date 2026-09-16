@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:photo-worker": "tsx watch src/photo-worker.ts",
+    "dev:ocr-worker": "tsx watch src/ocr-worker.ts",
     "dev:payment-worker": "tsx watch src/payment-worker.ts",
     "dev:report-worker": "tsx watch src/report-worker.ts",
     "dev:mail-worker": "tsx watch src/mail-worker.ts",
@@ -13,6 +14,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "start:photo-worker": "node dist/photo-worker.js",
+    "start:ocr-worker": "node dist/ocr-worker.js",
     "start:payment-worker": "node dist/payment-worker.js",
     "start:report-worker": "node dist/report-worker.js",
     "start:mail-worker": "node dist/mail-worker.js",

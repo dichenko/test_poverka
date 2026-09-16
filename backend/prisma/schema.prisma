@@ -245,8 +245,8 @@ model FileEntity {
 model OcrRecognition {
   id                 String               @id @default(cuid())
   fileId             String               @unique @map("file_id")
-  originalPath       String               @map("original_path")
-  originalMimeType   String               @map("original_mime_type")
+  sourcePath         String               @map("source_path")
+  sourceMimeType     String               @map("source_mime_type")
   compressedPhotoUrl String               @map("compressed_photo_url")
   resultJsonUrl      String?              @map("result_json_url")
   status             OcrRecognitionStatus @default(PENDING)

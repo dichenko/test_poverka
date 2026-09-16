@@ -59,7 +59,7 @@ async function cleanupPhotos(cutoffDate: Date, isShuttingDownRef: { value: boole
         compressedPath: true,
         ocrRecognition: {
           select: {
-            originalPath: true
+            sourcePath: true
           }
         }
       }
@@ -81,7 +81,9 @@ async function cleanupPhotos(cutoffDate: Date, isShuttingDownRef: { value: boole
           ? path.join(path.dirname(row.compressedPath), `${path.parse(row.compressedPath).name}.json`)
           : null;
         const filePaths = Array.from(new Set(
-          [row.storageKey, row.compressedPath, row.ocrRecognition?.originalPath, sidecarPath]
+          // sourcePath normally duplicates storageKey because OCR uses the compressed photo.
+          // Keep it for one retention cycle to remove source originals from pre-migration tasks.
+          [row.storageKey, row.compressedPath, row.ocrRecognition?.sourcePath, sidecarPath]
             .filter((item): item is string => Boolean(item))
         ));
         for (const storagePath of filePaths) {

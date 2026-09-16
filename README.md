@@ -133,7 +133,7 @@ Old MVP URL token auth is removed. Miniapp auth is based on MAX `initData` serve
 
 ## OCR Worker
 
-`ocr-worker` asynchronously sends each original confirmed photo to the OCR service. Its failures and retries do not affect photo compression or submission processing. A successful OCR HTTP response is stored beside the compressed photo as a public `.json` file.
+`ocr-worker` asynchronously sends the confirmed photo's already compressed JPEG to the OCR service. Its failures and retries do not affect photo compression or submission processing. The JPEG is EXIF-orientated by `sharp` before it is saved and queued, so OCR receives the correctly oriented stored image. A successful OCR HTTP response is stored beside that photo as a public `.json` file.
 
 ```env
 OCR_API_URL=https://ocr.poverka-bot.ru
@@ -144,7 +144,7 @@ OCR_WORKER_POLL_INTERVAL_MS=5000
 OCR_RETRY_DELAY_MS=5000
 ```
 
-Do not commit `OCR_API_KEY`. The original photo is retained only while its OCR task is pending and is deleted after a terminal OCR result; the existing file cleanup also removes OCR sidecar JSON files.
+Do not commit `OCR_API_KEY`. The original photo is deleted once its compressed JPEG has been saved and queued for OCR. The existing file cleanup removes the compressed photo and its OCR sidecar JSON file after the configured retention period.
 
 Flow:
 

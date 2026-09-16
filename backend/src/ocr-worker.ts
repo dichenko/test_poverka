@@ -64,22 +64,16 @@ async function getAndLockNextRecognition() {
   return locked.count ? recognition : null;
 }
 
-async function removeOriginal(originalPath: string) {
-  const storageRoot = path.resolve(env.STORAGE_LOCAL_PATH);
-  const absolutePath = ensureInsideBase(storageRoot, path.resolve(storageRoot, originalPath));
-  await fs.rm(absolutePath, { force: true });
-}
-
-async function recognize(originalPath: string, originalMimeType: string) {
+async function recognize(sourcePath: string, sourceMimeType: string) {
   if (!env.OCR_API_KEY) {
     throw new Error("OCR_API_KEY is not configured.");
   }
 
   const storageRoot = path.resolve(env.STORAGE_LOCAL_PATH);
-  const absolutePath = ensureInsideBase(storageRoot, path.resolve(storageRoot, originalPath));
+  const absolutePath = ensureInsideBase(storageRoot, path.resolve(storageRoot, sourcePath));
   const bytes = await fs.readFile(absolutePath);
   const form = new FormData();
-  form.append("file", new Blob([bytes], { type: originalMimeType }), path.basename(absolutePath));
+  form.append("file", new Blob([bytes], { type: sourceMimeType }), path.basename(absolutePath));
   const response = await fetch(`${env.OCR_API_URL.replace(/\/$/, "")}/ocr`, {
     method: "POST",
     headers: { "X-API-Key": env.OCR_API_KEY },
@@ -113,7 +107,7 @@ function getOcrStatus(payload: unknown) {
   return typeof value === "string" ? value : null;
 }
 
-async function finishFailure(id: string, originalPath: string, attemptsCount: number, failure: unknown, transient: boolean, retryAfterSeconds?: number) {
+async function finishFailure(id: string, attemptsCount: number, failure: unknown, transient: boolean, retryAfterSeconds?: number) {
   const canRetry = transient && attemptsCount <= env.OCR_MAX_RETRIES;
   if (canRetry) {
     await prisma.ocrRecognition.update({
@@ -132,7 +126,6 @@ async function finishFailure(id: string, originalPath: string, attemptsCount: nu
     where: { id },
     data: { status: OcrRecognitionStatus.FAILED, attemptsCount, errorMessage: errorMessage(failure), finishedAt: new Date() }
   });
-  await removeOriginal(originalPath).catch((error) => logger.error({ err: error, id }, "Failed to delete OCR source photo"));
 }
 
 async function processOneRecognition() {
@@ -143,9 +136,9 @@ async function processOneRecognition() {
 
   const attemptsCount = recognition.attemptsCount + 1;
   try {
-    const result = await recognize(recognition.originalPath, recognition.originalMimeType);
+    const result = await recognize(recognition.sourcePath, recognition.sourceMimeType);
     if (!result.ok) {
-      await finishFailure(recognition.id, recognition.originalPath, attemptsCount, result.error, result.transient, result.retryAfterSeconds);
+      await finishFailure(recognition.id, attemptsCount, result.error, result.transient, result.retryAfterSeconds);
       return true;
     }
 
@@ -162,13 +155,10 @@ async function processOneRecognition() {
         finishedAt: new Date()
       }
     });
-    await removeOriginal(recognition.originalPath).catch((error) =>
-      logger.error({ err: error, recognitionId: recognition.id }, "Failed to delete OCR source photo")
-    );
     logger.info({ recognitionId: recognition.id, resultJsonUrl }, "OCR recognition completed");
   } catch (error) {
     // Network, file-system and JSON write failures are isolated to this optional worker.
-    await finishFailure(recognition.id, recognition.originalPath, attemptsCount, error, true);
+    await finishFailure(recognition.id, attemptsCount, error, true);
     logger.error({ err: error, recognitionId: recognition.id }, "OCR recognition failed");
   }
   return true;

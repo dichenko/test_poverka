@@ -112,21 +112,24 @@ async function processOneFile() {
         where: { fileId: file.id },
         create: {
           fileId: file.id,
-          originalPath: normalizeStoragePath(path.relative(storageRoot, originalPath)),
-          originalMimeType: file.mimeType,
+          sourcePath: compressedStoragePath,
+          sourceMimeType: "image/jpeg",
           compressedPhotoUrl: publicUrl
         },
         update: {
-          originalPath: normalizeStoragePath(path.relative(storageRoot, originalPath)),
-          originalMimeType: file.mimeType,
+          sourcePath: compressedStoragePath,
+          sourceMimeType: "image/jpeg",
           compressedPhotoUrl: publicUrl
         }
       });
     } catch (ocrQueueError) {
       // OCR is optional: its queue must never prevent a confirmed photo from being processed.
       logger.error({ err: ocrQueueError, fileId: file.id }, "Failed to enqueue OCR recognition");
-      await fs.rm(originalPath, { force: true });
     }
+
+    // sharp.rotate() has already applied EXIF orientation to this compressed JPEG.
+    // OCR reads that same stored file, so the original is no longer needed.
+    await fs.rm(originalPath, { force: true });
     logger.info(
       {
         fileId: file.id,
